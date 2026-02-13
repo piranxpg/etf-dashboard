@@ -3,7 +3,7 @@ import FinanceDataReader as fdr
 import pandas as pd
 from datetime import timedelta, date
 
-st.set_page_config(page_title="국내 ETF 수익률", page_icon="📈", layout="wide")
+st.set_page_config(page_title="국내 ETF 수익률/배당금 분석기", page_icon="📈", layout="wide")
 
 st.markdown(
     """
@@ -35,7 +35,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.markdown('<div class="etf-title">📈 국내 ETF 수익률</div>', unsafe_allow_html=True)
+st.markdown('<div class="etf-title">📈 국내 ETF 수익률/배당금 분석기</div>', unsafe_allow_html=True)
 st.caption("※ 모든 데이터는 실시간이 아니며, 투자 참고용입니다. (데이터 오류/지연 가능)")
 
 @st.cache_data(ttl=60 * 60 * 6)
