@@ -205,6 +205,9 @@ investment = st.number_input(
 )
 st.session_state.investment = int(investment)
 
+if investment == 0:
+    st.info("투자금을 입력해주세요")
+
 mode = st.radio(
     "계산 방식",
     ["연 분배율(%)로 계산 (간편/추천)", "월 주당 분배금(원)으로 계산 (더 직접적)"],
