@@ -3,41 +3,31 @@ import FinanceDataReader as fdr
 import pandas as pd
 from datetime import timedelta, date
 
-# =========================
-# Page Config
-# =========================
 st.set_page_config(page_title="국내 ETF 수익률", page_icon="📈", layout="wide")
 
-# =========================
-# CSS: 상단 잘림/제목 크기/줄바꿈/가로배치 최적화
-# =========================
 st.markdown(
     """
 <style>
-/* 상단(Deploy/Rerun 바) 때문에 제목이 가려지는 느낌 완화 */
-.block-container { padding-top: 2.4rem; padding-bottom: 2rem; }
+/* ✅ 상단 Streamlit 바(Deploy/Rerun) 겹침 방지: 컨텐츠를 더 아래로 */
+.block-container { padding-top: 4.2rem; padding-bottom: 2rem; }
 
-/* 제목: 작게 + 말줄임 없음 + 글자단위 줄바꿈 방지 */
 .etf-title {
   font-size: 1.45rem;
   font-weight: 800;
   margin: 0 0 0.25rem 0;
   line-height: 1.15;
-  word-break: keep-all;   /* 한글 단독 줄 방지 */
+  word-break: keep-all;
   overflow-wrap: normal;
 }
 
-/* 메트릭 텍스트 안정화(줄바꿈 방지/말줄임) */
 [data-testid="stMetricLabel"] { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 [data-testid="stMetricValue"] { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 [data-testid="stMetricDelta"] { white-space: nowrap; }
 
-/* 버튼: 컬럼 안에서 풀폭 */
 .stButton>button { width: 100%; }
 
-/* 모바일에서 좌우 패딩 축소 + 제목 더 작게 */
 @media (max-width: 640px) {
-  .block-container { padding-left: 0.85rem; padding-right: 0.85rem; }
+  .block-container { padding-top: 5.0rem; padding-left: 0.85rem; padding-right: 0.85rem; }
   .etf-title { font-size: 1.25rem; }
 }
 </style>
@@ -45,16 +35,10 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# =========================
-# Title
-# =========================
 st.markdown('<div class="etf-title">📈 국내 ETF 수익률</div>', unsafe_allow_html=True)
 st.caption("※ 모든 데이터는 실시간이 아니며, 투자 참고용입니다. (데이터 오류/지연 가능)")
 
-# =========================
-# Data Loaders (Cached)
-# =========================
-@st.cache_data(ttl=60 * 60 * 6)  # 6 hours
+@st.cache_data(ttl=60 * 60 * 6)
 def get_etf_list() -> pd.DataFrame:
     df = fdr.StockListing("ETF/KR")
     for col in ["Symbol", "Name"]:
@@ -64,7 +48,7 @@ def get_etf_list() -> pd.DataFrame:
     df["Name"] = df["Name"].astype(str)
     return df
 
-@st.cache_data(ttl=60 * 10)  # 10 minutes
+@st.cache_data(ttl=60 * 10)
 def get_price_data(symbol: str, start: date, end: date) -> pd.DataFrame:
     df = fdr.DataReader(symbol, start, end)
     if df is None or df.empty:
@@ -73,9 +57,6 @@ def get_price_data(symbol: str, start: date, end: date) -> pd.DataFrame:
         return pd.DataFrame()
     return df.sort_index()
 
-# =========================
-# Helpers
-# =========================
 def fmt_pct(x):
     return "-" if x is None else f"{x:.2f}%"
 
@@ -90,9 +71,6 @@ def get_return_by_trading_days(df_price: pd.DataFrame, current_price: float, n: 
         return None
     return (current_price / past_price - 1) * 100
 
-# =========================
-# Sidebar - Search & Select
-# =========================
 st.sidebar.header("🔍 검색 옵션")
 
 with st.spinner("국내 모든 ETF 정보를 가져오는 중입니다..."):
@@ -122,9 +100,6 @@ selected_option = st.sidebar.selectbox("분석할 ETF를 선택하세요:", opti
 
 code, name = selected_option.split(" | ", 1)
 
-# =========================
-# Load Price Data
-# =========================
 end_date = date.today()
 start_date = end_date - timedelta(days=365 * 2)
 
@@ -140,20 +115,13 @@ current_price = float(df_price.loc[last_dt, "Close"])
 yesterday_price = float(df_price["Close"].iloc[-2]) if len(df_price) >= 2 else current_price
 diff_pct = ((current_price / yesterday_price) - 1) * 100 if yesterday_price else 0.0
 
-# =========================
-# Returns
-# =========================
 ret_1w = get_return_by_trading_days(df_price, current_price, 5)
 ret_1m = get_return_by_trading_days(df_price, current_price, 21)
 ret_6m = get_return_by_trading_days(df_price, current_price, 126)
 ret_1y = get_return_by_trading_days(df_price, current_price, 252)
 
-# =========================
-# Main UI
-# =========================
 st.subheader(f"📊 {name} ({code})")
 
-# 상단 지표: '현재 가격' + (최신 거래일/데이터 시작/데이터 개수) 같은 줄
 m1, m2 = st.columns([1.2, 1.8])
 with m1:
     st.metric("현재 가격", fmt_won(current_price), delta=f"{diff_pct:.2f}%")
@@ -163,7 +131,6 @@ with m2:
     b.metric("데이터 시작", df_price.index.min().strftime("%Y-%m-%d"))
     c.metric("데이터 개수", f"{len(df_price):,}")
 
-# 기간별 수익률: 4개 같은 줄(모바일은 자동으로 접힐 수 있음)
 st.write("#### 📅 기간별 수익률 (거래일 기준)")
 rr1, rr2, rr3, rr4 = st.columns(4)
 rr1.metric("1주", fmt_pct(ret_1w))
@@ -175,9 +142,6 @@ st.write("#### 📈 최근 1년 주가 흐름(종가)")
 df_1y = df_price.loc[df_price.index >= (last_dt - timedelta(days=365))]
 st.line_chart(df_1y["Close"])
 
-# =========================
-# Dividend Simulation + Investment Buttons (가로 한 줄)
-# =========================
 st.divider()
 st.subheader("💸 배당금(분배금) 시뮬레이션")
 
@@ -185,8 +149,6 @@ if "investment" not in st.session_state:
     st.session_state.investment = 50_000_000
 
 st.write("#### 🧮 투자금 빠른 입력(누적 버튼)")
-
-# 버튼 5개를 가로 한 줄(PC), 모바일은 폭에 따라 자동 줄바꿈(가로 배열 느낌 유지)
 b1, b2, b3, b4, b5 = st.columns(5)
 with b1:
     if st.button("+100만원", use_container_width=True):
@@ -228,7 +190,6 @@ if mode.startswith("연 분배율"):
     d1, d2 = st.columns(2)
     d1.metric("예상 월 배당금(분배금)", fmt_won(estimated_monthly))
     d2.metric("예상 연 배당금(분배금)", fmt_won(estimated_monthly * 12))
-
 else:
     monthly_div_per_share = st.number_input("월 주당 분배금(원)", min_value=0.0, value=300.0, step=10.0)
     shares = (investment / current_price) if current_price else 0.0
