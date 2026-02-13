@@ -3,8 +3,14 @@ import FinanceDataReader as fdr
 import pandas as pd
 from datetime import timedelta, date
 
+# =========================
+# Page Config
+# =========================
 st.set_page_config(page_title="국내 ETF 수익률/배당금 분석기", page_icon="📈", layout="wide")
 
+# =========================
+# CSS (사용자 확정 버전)
+# =========================
 st.markdown(
     """
 <style>
@@ -35,10 +41,16 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# =========================
+# Title
+# =========================
 st.markdown('<div class="etf-title">📈 국내 ETF 수익률/배당금 분석기</div>', unsafe_allow_html=True)
 st.caption("※ 모든 데이터는 실시간이 아니며, 투자 참고용입니다. (데이터 오류/지연 가능)")
 
-@st.cache_data(ttl=60 * 60 * 6)
+# =========================
+# Data Loaders (Cached)
+# =========================
+@st.cache_data(ttl=60 * 60 * 6)  # 6 hours
 def get_etf_list() -> pd.DataFrame:
     df = fdr.StockListing("ETF/KR")
     for col in ["Symbol", "Name"]:
@@ -48,7 +60,7 @@ def get_etf_list() -> pd.DataFrame:
     df["Name"] = df["Name"].astype(str)
     return df
 
-@st.cache_data(ttl=60 * 10)
+@st.cache_data(ttl=60 * 10)  # 10 minutes
 def get_price_data(symbol: str, start: date, end: date) -> pd.DataFrame:
     df = fdr.DataReader(symbol, start, end)
     if df is None or df.empty:
@@ -57,6 +69,9 @@ def get_price_data(symbol: str, start: date, end: date) -> pd.DataFrame:
         return pd.DataFrame()
     return df.sort_index()
 
+# =========================
+# Helpers
+# =========================
 def fmt_pct(x):
     return "-" if x is None else f"{x:.2f}%"
 
@@ -71,6 +86,9 @@ def get_return_by_trading_days(df_price: pd.DataFrame, current_price: float, n: 
         return None
     return (current_price / past_price - 1) * 100
 
+# =========================
+# Sidebar - Search & Select
+# =========================
 st.sidebar.header("🔍 검색 옵션")
 
 with st.spinner("국내 모든 ETF 정보를 가져오는 중입니다..."):
@@ -100,6 +118,9 @@ selected_option = st.sidebar.selectbox("분석할 ETF를 선택하세요:", opti
 
 code, name = selected_option.split(" | ", 1)
 
+# =========================
+# Load Price Data
+# =========================
 end_date = date.today()
 start_date = end_date - timedelta(days=365 * 2)
 
@@ -115,11 +136,17 @@ current_price = float(df_price.loc[last_dt, "Close"])
 yesterday_price = float(df_price["Close"].iloc[-2]) if len(df_price) >= 2 else current_price
 diff_pct = ((current_price / yesterday_price) - 1) * 100 if yesterday_price else 0.0
 
+# =========================
+# Returns
+# =========================
 ret_1w = get_return_by_trading_days(df_price, current_price, 5)
 ret_1m = get_return_by_trading_days(df_price, current_price, 21)
 ret_6m = get_return_by_trading_days(df_price, current_price, 126)
 ret_1y = get_return_by_trading_days(df_price, current_price, 252)
 
+# =========================
+# Main UI
+# =========================
 st.subheader(f"📊 {name} ({code})")
 
 m1, m2 = st.columns([1.2, 1.8])
@@ -142,6 +169,9 @@ st.write("#### 📈 최근 1년 주가 흐름(종가)")
 df_1y = df_price.loc[df_price.index >= (last_dt - timedelta(days=365))]
 st.line_chart(df_1y["Close"])
 
+# =========================
+# Dividend Simulation + Investment Buttons
+# =========================
 st.divider()
 st.subheader("💸 배당금(분배금) 시뮬레이션")
 
@@ -184,14 +214,23 @@ mode = st.radio(
 estimated_monthly = 0.0
 
 if mode.startswith("연 분배율"):
-    annual_yield = st.number_input("예상 연 분배율(%)", min_value=0.0, value=4.32, step=0.1)
+    annual_yield = st.number_input("예상 연 분배율(%)", min_value=0.0, value=0.0, step=0.1)
+
+    if annual_yield == 0.0:
+        st.info("연 분배율(%)을 입력하면 예상 월/연 분배금이 계산됩니다.")
+
     estimated_monthly = investment * (annual_yield / 100.0) / 12.0
 
     d1, d2 = st.columns(2)
     d1.metric("예상 월 배당금(분배금)", fmt_won(estimated_monthly))
     d2.metric("예상 연 배당금(분배금)", fmt_won(estimated_monthly * 12))
+
 else:
-    monthly_div_per_share = st.number_input("월 주당 분배금(원)", min_value=0.0, value=300.0, step=10.0)
+    monthly_div_per_share = st.number_input("월 주당 분배금(원)", min_value=0.0, value=0.0, step=10.0)
+
+    if monthly_div_per_share == 0.0:
+        st.info("월 주당 분배금(원)을 입력하면 예상 월/연 분배금이 계산됩니다.")
+
     shares = (investment / current_price) if current_price else 0.0
     estimated_monthly = shares * monthly_div_per_share
 
