@@ -12,7 +12,7 @@ st.markdown(
 .block-container { padding-top: 4.2rem; padding-bottom: 2rem; }
 
 .etf-title{
-  font-size: 1.75rem;   /* ✅ PC 제목 크기 */
+  font-size: 1.85rem;   /* ✅ PC 제목 크기 */
   font-weight: 800;
   margin: 0 0 0.25rem 0;
   line-height: 1.15;
@@ -28,7 +28,7 @@ st.markdown(
 
 @media (max-width: 640px) {
   .block-container { padding-top: 5.0rem; padding-left: 0.85rem; padding-right: 0.85rem; }
-  .etf-title { font-size: 1.45rem; }  /* ✅ 모바일 제목 크기 */
+  .etf-title { font-size: 1.75rem; }  /* ✅ 모바일 제목 크기 */
 }
 </style>
 """,
