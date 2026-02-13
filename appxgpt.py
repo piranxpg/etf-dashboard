@@ -176,7 +176,7 @@ st.divider()
 st.subheader("💸 배당금(분배금) 시뮬레이션")
 
 if "investment" not in st.session_state:
-    st.session_state.investment = 50_000_000
+    st.session_state.investment = 0
 
 st.write("#### 🧮 투자금 빠른 입력(누적 버튼)")
 b1, b2, b3, b4, b5 = st.columns(5)
