@@ -6,26 +6,33 @@ from datetime import timedelta, date
 # =========================
 # Page Config
 # =========================
-st.set_page_config(page_title="나만의 ETF 대시보드", page_icon="📈", layout="wide")
+st.set_page_config(page_title="ETF 대시보드", page_icon="📈", layout="wide")
 
 # =========================
-# Mobile-first CSS (줄바꿈/폭/버튼/메트릭 안정화)
+# CSS: 상단 잘림/줄바꿈/가로배치 최적화
 # =========================
 st.markdown(
     """
 <style>
-/* 여백 최적화 */
-.block-container { padding-top: 1rem; padding-bottom: 2rem; }
+/* 상단(Deploy/Rerun 바) 때문에 제목이 가려지는 느낌 완화 */
+.block-container { padding-top: 2.6rem; padding-bottom: 2rem; }
 
-/* metric 텍스트가 모바일에서 엉키지 않도록 */
+/* 제목 줄바꿈 방지 + 너무 길면 말줄임(모바일) */
+h1 {
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+/* 메트릭 텍스트 안정화(줄바꿈 방지) */
 [data-testid="stMetricLabel"] { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-[data-testid="stMetricValue"] { white-space: nowrap; }
+[data-testid="stMetricValue"] { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 [data-testid="stMetricDelta"] { white-space: nowrap; }
 
-/* 버튼은 폭 채우되(모바일/PC 둘 다) 컬럼 안에서는 "가로 정렬" 유지 */
+/* 버튼: 컬럼 안에서 풀폭 */
 .stButton>button { width: 100%; }
 
-/* 모바일에서 좌우 패딩 살짝 축소 */
+/* 모바일에서 패딩 축소 */
 @media (max-width: 640px) {
   .block-container { padding-left: 0.85rem; padding-right: 0.85rem; }
 }
@@ -34,7 +41,11 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("📈 국내 ETF 수익률 분석기")
+# =========================
+# Title (줄바꿈 방지용: st.title 대신 마크다운 h1)
+# =========================
+st.markdown("# 📈 국내 ETF 수익률 분석기")
+
 st.caption("※ 모든 데이터는 실시간이 아니며, 투자 참고용입니다. (데이터 오류/지연 가능)")
 
 # =========================
@@ -135,65 +146,62 @@ ret_6m = get_return_by_trading_days(df_price, current_price, 126)
 ret_1y = get_return_by_trading_days(df_price, current_price, 252)
 
 # =========================
-# Main UI (Mobile-first)
+# Main UI
 # =========================
 st.subheader(f"📊 {name} ({code})")
 
-# ✅ 상단 지표: 4개를 2개씩 두 줄로 (모바일에서 가장 안정적)
-row1_a, row1_b = st.columns(2)
-row1_a.metric("현재 가격", fmt_won(current_price), delta=f"{diff_pct:.2f}%")
-row1_b.metric("최신 거래일", last_dt.strftime("%Y-%m-%d"))
+# ✅ 상단 지표: '현재 가격'은 크게 + 나머지 3개는 같은 줄(3열)로
+m1, m2 = st.columns([1.2, 1.8])
+with m1:
+    st.metric("현재 가격", fmt_won(current_price), delta=f"{diff_pct:.2f}%")
+with m2:
+    a, b, c = st.columns(3)
+    a.metric("최신 거래일", last_dt.strftime("%Y-%m-%d"))
+    b.metric("데이터 시작", df_price.index.min().strftime("%Y-%m-%d"))
+    c.metric("데이터 개수", f"{len(df_price):,}")
 
-row2_a, row2_b = st.columns(2)
-row2_a.metric("데이터 시작", df_price.index.min().strftime("%Y-%m-%d"))
-row2_b.metric("데이터 개수", f"{len(df_price):,}")
-
-# ✅ 수익률도 2개씩 두 줄
+# ✅ 기간별 수익률도 4개를 한 줄로(PC) 배치
 st.write("#### 📅 기간별 수익률 (거래일 기준)")
-r1, r2 = st.columns(2)
-r1.metric("1주 수익률", fmt_pct(ret_1w))
-r2.metric("1개월 수익률", fmt_pct(ret_1m))
-r3, r4 = st.columns(2)
-r3.metric("6개월 수익률", fmt_pct(ret_6m))
-r4.metric("1년 수익률", fmt_pct(ret_1y))
+rr1, rr2, rr3, rr4 = st.columns(4)
+rr1.metric("1주", fmt_pct(ret_1w))
+rr2.metric("1개월", fmt_pct(ret_1m))
+rr3.metric("6개월", fmt_pct(ret_6m))
+rr4.metric("1년", fmt_pct(ret_1y))
 
 st.write("#### 📈 최근 1년 주가 흐름(종가)")
 df_1y = df_price.loc[df_price.index >= (last_dt - timedelta(days=365))]
 st.line_chart(df_1y["Close"])
 
 # =========================
-# Dividend Simulation + Investment Buttons (가로 유지)
+# Dividend Simulation + Investment Buttons (가로 한 줄)
 # =========================
 st.divider()
 st.subheader("💸 배당금(분배금) 시뮬레이션")
 
 # session_state 초기화
 if "investment" not in st.session_state:
-    st.session_state.investment = 50_000_000  # 기본 5천만
+    st.session_state.investment = 50_000_000
 
 st.write("#### 🧮 투자금 빠른 입력(누적 버튼)")
 
-# ✅ 요청대로 "가로로" 유지: 4개는 2x2, 마지막 초기화는 아래 풀폭
-# (모바일에서도 2열로 접히며 '가로 느낌' 유지, PC에서는 깔끔한 2x2)
-b1, b2 = st.columns(2)
+# ✅ 요청: 버튼을 가로 한 줄에 최대한 넣기
+# PC에서는 5개 한 줄이 깔끔, 모바일에서는 자동으로 2~3개씩 줄바꿈됨(그래도 '가로' 느낌 유지)
+b1, b2, b3, b4, b5 = st.columns(5)
 with b1:
     if st.button("+100만원", use_container_width=True):
         st.session_state.investment += 1_000_000
 with b2:
     if st.button("+500만원", use_container_width=True):
         st.session_state.investment += 5_000_000
-
-b3, b4 = st.columns(2)
 with b3:
     if st.button("+1,000만원", use_container_width=True):
         st.session_state.investment += 10_000_000
 with b4:
     if st.button("+1억원", use_container_width=True):
         st.session_state.investment += 100_000_000
-
-# 초기화는 가로로 길게(오작동 방지 + 가독성)
-if st.button("초기화(0원)", use_container_width=True):
-    st.session_state.investment = 0
+with b5:
+    if st.button("초기화", use_container_width=True):
+        st.session_state.investment = 0
 
 investment = st.number_input(
     "투자금(원) (버튼으로 누적 입력 가능)",
@@ -207,7 +215,7 @@ st.session_state.investment = int(investment)
 mode = st.radio(
     "계산 방식",
     ["연 분배율(%)로 계산 (간편/추천)", "월 주당 분배금(원)으로 계산 (더 직접적)"],
-    horizontal=False,  # 모바일에서 줄바꿈 안정적
+    horizontal=True,  # 요청: 가로 유지
 )
 
 estimated_monthly = 0.0
@@ -216,7 +224,6 @@ if mode.startswith("연 분배율"):
     annual_yield = st.number_input("예상 연 분배율(%)", min_value=0.0, value=4.32, step=0.1)
     estimated_monthly = investment * (annual_yield / 100.0) / 12.0
 
-    # ✅ 모바일 안정: 2열
     d1, d2 = st.columns(2)
     d1.metric("예상 월 배당금(분배금)", fmt_won(estimated_monthly))
     d2.metric("예상 연 배당금(분배금)", fmt_won(estimated_monthly * 12))
@@ -226,17 +233,13 @@ else:
     shares = (investment / current_price) if current_price else 0.0
     estimated_monthly = shares * monthly_div_per_share
 
-    # ✅ 모바일 안정: 2열 + 1열
-    d1, d2 = st.columns(2)
-    d1.metric("예상 보유 주식수(추정)", f"{shares:,.2f}주")
-    d2.metric("예상 월 배당금(분배금)", fmt_won(estimated_monthly))
-    st.metric("예상 연 배당금(분배금)", fmt_won(estimated_monthly * 12))
+    d1, d2, d3 = st.columns(3)
+    d1.metric("예상 보유 주식수", f"{shares:,.2f}주")
+    d2.metric("예상 월 배당금", fmt_won(estimated_monthly))
+    d3.metric("예상 연 배당금", fmt_won(estimated_monthly * 12))
 
 st.success(f"투자금 {fmt_won(investment)} → 예상 월 배당금(분배금) {fmt_won(estimated_monthly)}")
 st.caption("※ 본 시뮬레이션은 단순 추정치입니다. 실제 분배금은 ETF 공시/운용 결과에 따라 달라질 수 있습니다.")
 
-# =========================
-# Raw Data
-# =========================
 with st.expander("데이터 원본 표 보기(최신순)"):
     st.dataframe(df_price.sort_index(ascending=False))
