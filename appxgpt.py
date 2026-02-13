@@ -8,6 +8,32 @@ from datetime import timedelta, date
 # =========================
 st.set_page_config(page_title="나만의 ETF 대시보드", page_icon="📈", layout="wide")
 
+# =========================
+# Mobile-first CSS (줄바꿈/폭/버튼/메트릭 안정화)
+# =========================
+st.markdown(
+    """
+<style>
+/* 여백 최적화 */
+.block-container { padding-top: 1rem; padding-bottom: 2rem; }
+
+/* metric 텍스트가 모바일에서 엉키지 않도록 */
+[data-testid="stMetricLabel"] { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+[data-testid="stMetricValue"] { white-space: nowrap; }
+[data-testid="stMetricDelta"] { white-space: nowrap; }
+
+/* 버튼은 폭 채우되(모바일/PC 둘 다) 컬럼 안에서는 "가로 정렬" 유지 */
+.stButton>button { width: 100%; }
+
+/* 모바일에서 좌우 패딩 살짝 축소 */
+@media (max-width: 640px) {
+  .block-container { padding-left: 0.85rem; padding-right: 0.85rem; }
+}
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
 st.title("📈 국내 ETF 수익률 분석기")
 st.caption("※ 모든 데이터는 실시간이 아니며, 투자 참고용입니다. (데이터 오류/지연 가능)")
 
@@ -39,6 +65,9 @@ def get_price_data(symbol: str, start: date, end: date) -> pd.DataFrame:
 def fmt_pct(x):
     return "-" if x is None else f"{x:.2f}%"
 
+def fmt_won(x: float) -> str:
+    return f"{x:,.0f}원"
+
 def get_return_by_trading_days(df_price: pd.DataFrame, current_price: float, n: int):
     if len(df_price) <= n:
         return None
@@ -46,9 +75,6 @@ def get_return_by_trading_days(df_price: pd.DataFrame, current_price: float, n: 
     if past_price == 0:
         return None
     return (current_price / past_price - 1) * 100
-
-def fmt_won(x: float) -> str:
-    return f"{x:,.0f}원"
 
 # =========================
 # Sidebar - Search & Select
@@ -109,60 +135,66 @@ ret_6m = get_return_by_trading_days(df_price, current_price, 126)
 ret_1y = get_return_by_trading_days(df_price, current_price, 252)
 
 # =========================
-# Main UI
+# Main UI (Mobile-first)
 # =========================
-st.subheader(f"📊 {name} ({code}) 상세 분석")
+st.subheader(f"📊 {name} ({code})")
 
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("현재 가격", fmt_won(current_price), delta=f"{diff_pct:.2f}%")
-m2.metric("기준일(최신 거래일)", last_dt.strftime("%Y-%m-%d"))
-m3.metric("데이터 구간 시작", df_price.index.min().strftime("%Y-%m-%d"))
-m4.metric("데이터 행 수", f"{len(df_price):,}")
+# ✅ 상단 지표: 4개를 2개씩 두 줄로 (모바일에서 가장 안정적)
+row1_a, row1_b = st.columns(2)
+row1_a.metric("현재 가격", fmt_won(current_price), delta=f"{diff_pct:.2f}%")
+row1_b.metric("최신 거래일", last_dt.strftime("%Y-%m-%d"))
 
+row2_a, row2_b = st.columns(2)
+row2_a.metric("데이터 시작", df_price.index.min().strftime("%Y-%m-%d"))
+row2_b.metric("데이터 개수", f"{len(df_price):,}")
+
+# ✅ 수익률도 2개씩 두 줄
 st.write("#### 📅 기간별 수익률 (거래일 기준)")
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("1주 수익률", fmt_pct(ret_1w))
-c2.metric("1개월 수익률", fmt_pct(ret_1m))
-c3.metric("6개월 수익률", fmt_pct(ret_6m))
-c4.metric("1년 수익률", fmt_pct(ret_1y))
+r1, r2 = st.columns(2)
+r1.metric("1주 수익률", fmt_pct(ret_1w))
+r2.metric("1개월 수익률", fmt_pct(ret_1m))
+r3, r4 = st.columns(2)
+r3.metric("6개월 수익률", fmt_pct(ret_6m))
+r4.metric("1년 수익률", fmt_pct(ret_1y))
 
 st.write("#### 📈 최근 1년 주가 흐름(종가)")
 df_1y = df_price.loc[df_price.index >= (last_dt - timedelta(days=365))]
 st.line_chart(df_1y["Close"])
 
 # =========================
-# ✅ Dividend Simulation + "Investment Add Buttons"
+# Dividend Simulation + Investment Buttons (가로 유지)
 # =========================
 st.divider()
 st.subheader("💸 배당금(분배금) 시뮬레이션")
 
-# --- session_state 초기화 ---
+# session_state 초기화
 if "investment" not in st.session_state:
     st.session_state.investment = 50_000_000  # 기본 5천만
 
-if "reset_clicked" not in st.session_state:
-    st.session_state.reset_clicked = False
-
 st.write("#### 🧮 투자금 빠른 입력(누적 버튼)")
-b1, b2, b3, b4, b5 = st.columns([1, 1, 1, 1, 1])
 
+# ✅ 요청대로 "가로로" 유지: 4개는 2x2, 마지막 초기화는 아래 풀폭
+# (모바일에서도 2열로 접히며 '가로 느낌' 유지, PC에서는 깔끔한 2x2)
+b1, b2 = st.columns(2)
 with b1:
-    if st.button("+100만원"):
+    if st.button("+100만원", use_container_width=True):
         st.session_state.investment += 1_000_000
 with b2:
-    if st.button("+500만원"):
+    if st.button("+500만원", use_container_width=True):
         st.session_state.investment += 5_000_000
+
+b3, b4 = st.columns(2)
 with b3:
-    if st.button("+1,000만원"):
+    if st.button("+1,000만원", use_container_width=True):
         st.session_state.investment += 10_000_000
 with b4:
-    if st.button("+1억원"):
+    if st.button("+1억원", use_container_width=True):
         st.session_state.investment += 100_000_000
-with b5:
-    if st.button("초기화(0원)"):
-        st.session_state.investment = 0
 
-# number_input은 session_state 값으로 연동
+# 초기화는 가로로 길게(오작동 방지 + 가독성)
+if st.button("초기화(0원)", use_container_width=True):
+    st.session_state.investment = 0
+
 investment = st.number_input(
     "투자금(원) (버튼으로 누적 입력 가능)",
     min_value=0,
@@ -170,14 +202,12 @@ investment = st.number_input(
     step=1_000_000,
     format="%d",
 )
-
-# 사용자가 number_input을 직접 바꾸면 session_state 동기화
 st.session_state.investment = int(investment)
 
 mode = st.radio(
     "계산 방식",
     ["연 분배율(%)로 계산 (간편/추천)", "월 주당 분배금(원)으로 계산 (더 직접적)"],
-    horizontal=True,
+    horizontal=False,  # 모바일에서 줄바꿈 안정적
 )
 
 estimated_monthly = 0.0
@@ -186,19 +216,21 @@ if mode.startswith("연 분배율"):
     annual_yield = st.number_input("예상 연 분배율(%)", min_value=0.0, value=4.32, step=0.1)
     estimated_monthly = investment * (annual_yield / 100.0) / 12.0
 
-    colA, colB = st.columns(2)
-    colA.metric("예상 월 배당금(분배금)", fmt_won(estimated_monthly))
-    colB.metric("예상 연 배당금(분배금)", fmt_won(estimated_monthly * 12))
+    # ✅ 모바일 안정: 2열
+    d1, d2 = st.columns(2)
+    d1.metric("예상 월 배당금(분배금)", fmt_won(estimated_monthly))
+    d2.metric("예상 연 배당금(분배금)", fmt_won(estimated_monthly * 12))
 
 else:
     monthly_div_per_share = st.number_input("월 주당 분배금(원)", min_value=0.0, value=300.0, step=10.0)
     shares = (investment / current_price) if current_price else 0.0
     estimated_monthly = shares * monthly_div_per_share
 
-    colA, colB, colC = st.columns(3)
-    colA.metric("예상 보유 주식수(추정)", f"{shares:,.2f}주")
-    colB.metric("예상 월 배당금(분배금)", fmt_won(estimated_monthly))
-    colC.metric("예상 연 배당금(분배금)", fmt_won(estimated_monthly * 12))
+    # ✅ 모바일 안정: 2열 + 1열
+    d1, d2 = st.columns(2)
+    d1.metric("예상 보유 주식수(추정)", f"{shares:,.2f}주")
+    d2.metric("예상 월 배당금(분배금)", fmt_won(estimated_monthly))
+    st.metric("예상 연 배당금(분배금)", fmt_won(estimated_monthly * 12))
 
 st.success(f"투자금 {fmt_won(investment)} → 예상 월 배당금(분배금) {fmt_won(estimated_monthly)}")
 st.caption("※ 본 시뮬레이션은 단순 추정치입니다. 실제 분배금은 ETF 공시/운용 결과에 따라 달라질 수 있습니다.")
