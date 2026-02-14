@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import timedelta, date
 import json
 from streamlit_local_storage import LocalStorage
+from urllib.parse import quote_plus
 
 # =========================
 # Page Config
@@ -116,6 +117,43 @@ def get_return_by_trading_days(df_price: pd.DataFrame, current_price: float, n: 
         return None
     return (current_price / past_price - 1) * 100
 
+def make_search_links(etf_name: str, etf_code: str) -> dict:
+    """ETF명/코드 기반으로 분배금/배당 검색 링크 생성"""
+    base_queries = [
+        f"{etf_name} 분배금",
+        f"{etf_name} 월 분배금",
+        f"{etf_name} 분배금 지급일",
+        f"{etf_name} 분배금 공시",
+        f"{etf_code} {etf_name} 분배금",
+    ]
+    # 대표 쿼리 2~3개만 UI에 노출
+    q1 = quote_plus(base_queries[0])
+    q2 = quote_plus(base_queries[2])
+    q3 = quote_plus(base_queries[3])
+
+    return {
+        "google_1": f"https://www.google.com/search?q={q1}",
+        "google_2": f"https://www.google.com/search?q={q2}",
+        "naver_1":  f"https://search.naver.com/search.naver?query={q1}",
+        "naver_2":  f"https://search.naver.com/search.naver?query={q3}",
+    }
+
+def render_search_buttons(etf_name: str, etf_code: str):
+    links = make_search_links(etf_name, etf_code)
+
+    st.write("#### 🔎 분배금/배당 정보 빠른 검색")
+    st.caption("※ 자동 수집 대신, 공식/포털 검색으로 빠르게 확인할 수 있게 연결합니다.")
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.link_button("구글: 분배금", links["google_1"], use_container_width=True)
+    with c2:
+        st.link_button("구글: 지급일", links["google_2"], use_container_width=True)
+    with c3:
+        st.link_button("네이버: 분배금", links["naver_1"], use_container_width=True)
+    with c4:
+        st.link_button("네이버: 공시", links["naver_2"], use_container_width=True)
+
 # =========================
 # Sidebar - Search & Select
 # =========================
@@ -211,7 +249,7 @@ if st.session_state.last_symbol != code:
     st.session_state.last_symbol = code
     st.session_state.annual_yield = 0.0
     st.session_state.monthly_div_per_share = 0.0
-    # calc_mode는 유지(월/연 어떤 모드든 그대로)
+    # calc_mode는 유지
 
 # =========================
 # Sidebar - Favorites
@@ -289,6 +327,9 @@ ret_1y = get_return_by_trading_days(df_price, current_price, 252)
 # =========================
 st.subheader(f"📊 {name} ({code})")
 
+# ✅ 분배금 검색 버튼(구글/네이버) - ETF명/코드 기반
+render_search_buttons(name, code)
+
 m1, m2 = st.columns([1.2, 1.8])
 with m1:
     st.metric("현재 가격", fmt_won(current_price), delta=f"{diff_pct:.2f}%")
@@ -348,10 +389,10 @@ st.session_state.investment = int(investment)
 if investment == 0:
     st.info("투자금을 입력해주세요.")
 
-# ✅ (순서 변경) 월 분배금 모드를 앞으로 + 기본도 월 분배금
+# ✅ 월 분배금이 기본/앞쪽
 mode = st.radio(
     "계산 방식",
-    [MONTHLY_MODE, ANNUAL_MODE],  # ✅ 월 → 연 순서
+    [MONTHLY_MODE, ANNUAL_MODE],
     key="calc_mode",
     horizontal=True,
 )
