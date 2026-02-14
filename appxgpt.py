@@ -94,7 +94,10 @@ st.sidebar.header("🔍 검색 옵션")
 with st.spinner("국내 모든 ETF 정보를 가져오는 중입니다..."):
     etf_list = get_etf_list()
 
-search_keyword = st.sidebar.text_input("ETF 검색 (코드/이름)", value="")
+if "favorite_etfs" not in st.session_state:
+    st.session_state.favorite_etfs = []
+
+search_keyword = st.sidebar.text_input("ETF 검색 (코드/이름)", value="", key="search_keyword")
 
 filtered = etf_list
 if search_keyword.strip():
@@ -114,9 +117,64 @@ if filtered.empty:
     st.stop()
 
 options = (filtered["Symbol"] + " | " + filtered["Name"]).tolist()
-selected_option = st.sidebar.selectbox("분석할 ETF를 선택하세요:", options, index=0)
+
+if "selected_etf_option" not in st.session_state:
+    st.session_state.selected_etf_option = options[0]
+
+if st.session_state.selected_etf_option not in options:
+    selected_symbol = st.session_state.selected_etf_option.split(" | ", 1)[0]
+    selected_row = etf_list[etf_list["Symbol"] == selected_symbol]
+    if not selected_row.empty:
+        extra_option = f"{selected_row.iloc[0]['Symbol']} | {selected_row.iloc[0]['Name']}"
+        options = [extra_option] + options
+    else:
+        st.session_state.selected_etf_option = options[0]
+
+selected_option = st.sidebar.selectbox("분석할 ETF를 선택하세요:", options, key="selected_etf_option")
 
 code, name = selected_option.split(" | ", 1)
+
+# =========================
+# Sidebar - Favorites
+# =========================
+st.sidebar.divider()
+st.sidebar.subheader("⭐ 즐겨찾기 ETF")
+
+MAX_FAVORITES = 10
+current_etf = f"{code} | {name}"
+
+c1, c2 = st.sidebar.columns(2)
+with c1:
+    if st.button("추가", key="add_favorite", use_container_width=True):
+        if current_etf in st.session_state.favorite_etfs:
+            st.sidebar.info("이미 즐겨찾기에 등록된 ETF입니다.")
+        elif len(st.session_state.favorite_etfs) >= MAX_FAVORITES:
+            st.sidebar.warning(f"즐겨찾기는 최대 {MAX_FAVORITES}개까지 등록할 수 있습니다.")
+        else:
+            st.session_state.favorite_etfs.append(current_etf)
+            st.sidebar.success("즐겨찾기에 추가했습니다.")
+
+with c2:
+    if st.button("해제", key="remove_favorite", use_container_width=True):
+        if current_etf in st.session_state.favorite_etfs:
+            st.session_state.favorite_etfs.remove(current_etf)
+            st.sidebar.success("즐겨찾기에서 해제했습니다.")
+        else:
+            st.sidebar.info("현재 ETF는 즐겨찾기에 없습니다.")
+
+st.sidebar.caption(f"등록된 즐겨찾기: {len(st.session_state.favorite_etfs)}/{MAX_FAVORITES}")
+
+if st.session_state.favorite_etfs:
+    favorite_choice = st.sidebar.radio(
+        "내 즐겨찾기 목록",
+        st.session_state.favorite_etfs,
+        key="favorite_choice",
+    )
+    if st.sidebar.button("선택한 ETF 보기", key="load_favorite", use_container_width=True):
+        st.session_state.selected_etf_option = favorite_choice
+        st.rerun()
+else:
+    st.sidebar.caption("즐겨찾기 ETF를 등록하면 여기서 빠르게 불러올 수 있습니다.")
 
 # =========================
 # Load Price Data
