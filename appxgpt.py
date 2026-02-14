@@ -103,6 +103,10 @@ with st.spinner("국내 모든 ETF 정보를 가져오는 중입니다..."):
 if "favorite_etfs" not in st.session_state:
     st.session_state.favorite_etfs = []
 
+# 즐겨찾기 선택을 안전하게 반영하기 위한 "대기" 키
+if "pending_etf_option" not in st.session_state:
+    st.session_state.pending_etf_option = ""
+
 search_keyword = st.sidebar.text_input("ETF 검색 (코드/이름)", value="", key="search_keyword")
 
 filtered = etf_list
@@ -126,6 +130,11 @@ options = (filtered["Symbol"] + " | " + filtered["Name"]).tolist()
 
 if "selected_etf_option" not in st.session_state:
     st.session_state.selected_etf_option = options[0]
+
+# ✅ 즐겨찾기에서 선택한 ETF를 다음 run 시작 시점(위젯 생성 전)에 안전하게 반영
+if st.session_state.pending_etf_option:
+    st.session_state.selected_etf_option = st.session_state.pending_etf_option
+    st.session_state.pending_etf_option = ""
 
 # 선택되어 있던 ETF가 검색 결과에서 사라진 경우에도 selectbox가 깨지지 않게 옵션 보강
 if st.session_state.selected_etf_option not in options:
@@ -177,9 +186,9 @@ if st.session_state.favorite_etfs:
         key="favorite_choice",
     )
     if st.sidebar.button("선택한 ETF 보기", key="load_favorite", use_container_width=True):
-        # 필요하면 검색어를 비워 UX를 깔끔하게 만들 수 있음(원치 않으면 아래 줄 삭제)
-        # st.session_state.search_keyword = ""
-        st.session_state.selected_etf_option = favorite_choice
+        # ✅ selectbox의 key(selected_etf_option)를 같은 run에서 직접 건드리지 않고,
+        #    다음 run에서 반영되도록 pending_etf_option에 저장
+        st.session_state.pending_etf_option = favorite_choice
         st.rerun()
 else:
     st.sidebar.caption("즐겨찾기 ETF를 등록하면 여기서 빠르게 불러올 수 있습니다.")
