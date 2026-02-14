@@ -3,8 +3,7 @@ import FinanceDataReader as fdr
 import pandas as pd
 from datetime import timedelta, date
 import json
-
-from streamlit_local_storage import LocalStorage  # 브라우저 localStorage
+from streamlit_local_storage import LocalStorage
 
 # =========================
 # Page Config
@@ -12,32 +11,27 @@ from streamlit_local_storage import LocalStorage  # 브라우저 localStorage
 st.set_page_config(page_title="국내 ETF 수익률/배당금 분석기", page_icon="📈", layout="wide")
 
 # =========================
-# CSS (사용자 확정 버전)
+# CSS
 # =========================
 st.markdown(
     """
 <style>
-/* ✅ 상단 Streamlit 바(Deploy/Rerun) 겹침 방지: 컨텐츠를 더 아래로 */
 .block-container { padding-top: 4.2rem; padding-bottom: 2rem; }
-
 .etf-title{
-  font-size: 1.85rem;   /* ✅ PC 제목 크기 */
+  font-size: 1.85rem;
   font-weight: 800;
   margin: 0 0 0.25rem 0;
   line-height: 1.15;
   word-break: keep-all;
   overflow-wrap: normal;
 }
-
 [data-testid="stMetricLabel"] { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 [data-testid="stMetricValue"] { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 [data-testid="stMetricDelta"] { white-space: nowrap; }
-
 .stButton>button { width: 100%; }
-
 @media (max-width: 640px) {
   .block-container { padding-top: 5.0rem; padding-left: 0.85rem; padding-right: 0.85rem; }
-  .etf-title { font-size: 1.75rem; }  /* ✅ 모바일 제목 크기 */
+  .etf-title { font-size: 1.75rem; }
 }
 </style>
 """,
@@ -48,17 +42,29 @@ st.markdown('<div class="etf-title">📈 국내 ETF 수익률/배당금 분석�
 st.caption("※ 모든 데이터는 실시간이 아니며, 투자 참고용입니다. (데이터 오류/지연 가능)")
 
 # =========================
-# LocalStorage (Browser favorites)
+# Normalizer (핵심!)
+# =========================
+def norm_symbol(x: str) -> str:
+    """종목코드를 항상 6자리 문자열로 통일"""
+    if x is None:
+        return ""
+    s = str(x).strip()
+    # 숫자만이면 6자리로 패딩
+    if s.isdigit():
+        return s.zfill(6)
+    return s
+
+# =========================
+# LocalStorage (favorites)
 # =========================
 localS = LocalStorage()
-LS_FAV_KEY = "etf_dashboard_favorites_symbol_v1"
+LS_FAV_KEY = "etf_dashboard_favorites_symbol_v2"
 
 def _safe_parse_symbols(raw) -> list[str]:
-    """localStorage에서 심볼 리스트를 안전하게 꺼냄"""
     if raw is None:
         return []
     if isinstance(raw, list):
-        return [x for x in raw if isinstance(x, str)]
+        return [norm_symbol(x) for x in raw if isinstance(x, str) and norm_symbol(x)]
     if isinstance(raw, str):
         s = raw.strip()
         if not s:
@@ -66,10 +72,11 @@ def _safe_parse_symbols(raw) -> list[str]:
         try:
             data = json.loads(s)
             if isinstance(data, list):
-                return [x for x in data if isinstance(x, str)]
+                return [norm_symbol(x) for x in data if isinstance(x, str) and norm_symbol(x)]
         except Exception:
-            # 예전 포맷(혹은 단일 문자열) 방어
-            return [raw]
+            # 단일 문자열이었던 경우 방어
+            ns = norm_symbol(raw)
+            return [ns] if ns else []
     return []
 
 def load_favorites_symbols() -> list[str]:
@@ -81,6 +88,8 @@ def load_favorites_symbols() -> list[str]:
 
 def save_favorites_symbols(symbols: list[str]) -> None:
     try:
+        # 저장도 6자리 통일
+        symbols = [norm_symbol(x) for x in symbols if norm_symbol(x)]
         localS.setItem(LS_FAV_KEY, json.dumps(symbols, ensure_ascii=False))
     except Exception:
         pass
@@ -88,17 +97,17 @@ def save_favorites_symbols(symbols: list[str]) -> None:
 # =========================
 # Data Loaders (Cached)
 # =========================
-@st.cache_data(ttl=60 * 60 * 6)  # 6 hours
+@st.cache_data(ttl=60 * 60 * 6)
 def get_etf_list() -> pd.DataFrame:
     df = fdr.StockListing("ETF/KR")
     for col in ["Symbol", "Name"]:
         if col not in df.columns:
             raise ValueError(f"ETF list missing required column: {col}")
-    df["Symbol"] = df["Symbol"].astype(str)
+    df["Symbol"] = df["Symbol"].astype(str).map(norm_symbol)  # ✅ 6자리 통일
     df["Name"] = df["Name"].astype(str)
     return df
 
-@st.cache_data(ttl=60 * 10)  # 10 minutes
+@st.cache_data(ttl=60 * 10)
 def get_price_data(symbol: str, start: date, end: date) -> pd.DataFrame:
     df = fdr.DataReader(symbol, start, end)
     if df is None or df.empty:
@@ -132,24 +141,24 @@ st.sidebar.header("🔍 검색 옵션")
 with st.spinner("국내 모든 ETF 정보를 가져오는 중입니다..."):
     etf_list = get_etf_list()
 
-# 심볼→이름 매핑
 symbol_to_name = dict(zip(etf_list["Symbol"], etf_list["Name"]))
 
 def label_symbol(sym: str) -> str:
+    sym = norm_symbol(sym)
     nm = symbol_to_name.get(sym, "")
     return f"{sym} | {nm}" if nm else sym
 
-# 즐겨찾기(심볼) 로드 (최초 1회)
+# 즐겨찾기 로드(최초 1회)
 if "favorite_symbols" not in st.session_state:
     st.session_state.favorite_symbols = load_favorites_symbols()
 
-# pending 값들 (위젯 생성 전 적용용)
+# pending 값들
 if "pending_symbol" not in st.session_state:
-    st.session_state.pending_symbol = None  # None이면 미적용
+    st.session_state.pending_symbol = None
 if "pending_search_keyword" not in st.session_state:
-    st.session_state.pending_search_keyword = None  # None이면 미적용 (빈문자열도 적용 가능)
+    st.session_state.pending_search_keyword = None
 
-# 검색어 예약 적용 (빈 문자열도 적용되어야 해서 None 센티넬 사용)
+# 검색어 pending 적용 (빈문자열도 적용되게 None 센티넬)
 if st.session_state.pending_search_keyword is not None:
     st.session_state.search_keyword = st.session_state.pending_search_keyword
     st.session_state.pending_search_keyword = None
@@ -160,7 +169,7 @@ search_keyword = st.sidebar.text_input(
     key="search_keyword",
 )
 
-# 후보 심볼 목록(필터 적용)
+# 필터 적용
 filtered_df = etf_list
 if search_keyword.strip():
     kw = search_keyword.strip().lower()
@@ -178,7 +187,7 @@ if filtered_df.empty:
     st.warning("검색 결과가 없습니다. 다른 키워드로 검색해보세요.")
     st.stop()
 
-filtered_symbols = filtered_df["Symbol"].tolist()
+filtered_symbols = [norm_symbol(x) for x in filtered_df["Symbol"].tolist()]
 
 # selected_symbol 기본값
 if "selected_symbol" not in st.session_state:
@@ -186,12 +195,13 @@ if "selected_symbol" not in st.session_state:
 
 # pending 즐겨찾기 심볼 적용(위젯 생성 전)
 if st.session_state.pending_symbol is not None:
-    st.session_state.selected_symbol = st.session_state.pending_symbol
+    st.session_state.selected_symbol = norm_symbol(st.session_state.pending_symbol)
     st.session_state.pending_symbol = None
 
-# 현재 선택 심볼이 필터 결과에 없으면, 맨 앞에 붙여 selectbox가 튕기지 않게
-if st.session_state.selected_symbol not in filtered_symbols:
-    filtered_symbols = [st.session_state.selected_symbol] + filtered_symbols
+# 현재 선택 심볼이 필터 결과에 없으면 앞에 붙이기
+sel_norm = norm_symbol(st.session_state.selected_symbol)
+if sel_norm and sel_norm not in filtered_symbols:
+    filtered_symbols = [sel_norm] + filtered_symbols
 
 selected_symbol = st.sidebar.selectbox(
     "분석할 ETF를 선택하세요:",
@@ -200,7 +210,7 @@ selected_symbol = st.sidebar.selectbox(
     key="selected_symbol",
 )
 
-code = selected_symbol
+code = norm_symbol(selected_symbol)
 name = symbol_to_name.get(code, "")
 
 # =========================
@@ -209,11 +219,13 @@ name = symbol_to_name.get(code, "")
 if "last_symbol" not in st.session_state:
     st.session_state.last_symbol = code
 
+# 입력값(위젯 키) 세션 기본값
 if "annual_yield" not in st.session_state:
     st.session_state.annual_yield = 0.0
 if "monthly_div_per_share" not in st.session_state:
     st.session_state.monthly_div_per_share = 0.0
 
+# ✅ 여기 비교도 6자리 통일된 code로만
 if st.session_state.last_symbol != code:
     st.session_state.last_symbol = code
     st.session_state.annual_yield = 0.0
@@ -258,9 +270,9 @@ if st.session_state.favorite_symbols:
         key="fav_choice",
     )
     if st.sidebar.button("선택한 ETF 보기", key="load_fav", use_container_width=True):
-        # ✅ 즐겨찾기 로딩 시 검색어를 '확실히' 비움(빈 문자열 적용 위해 None이 아닌 ""로 예약)
+        # 즐겨찾기 이동 시 검색어 비우기 + 심볼 적용
         st.session_state.pending_search_keyword = ""
-        st.session_state.pending_symbol = fav_choice
+        st.session_state.pending_symbol = norm_symbol(fav_choice)
         st.rerun()
 else:
     st.sidebar.caption("즐겨찾기 ETF를 등록하면 여기서 빠르게 불러올 수 있습니다.")
@@ -370,10 +382,8 @@ if mode.startswith("연 분배율"):
         step=0.1,
         key="annual_yield",
     )
-
     if annual_yield == 0.0:
         st.info("연 분배율(%)을 입력하면 예상 월/연 분배금이 계산됩니다.")
-
     estimated_monthly = investment * (annual_yield / 100.0) / 12.0
 
     d1, d2 = st.columns(2)
@@ -387,7 +397,6 @@ else:
         step=10.0,
         key="monthly_div_per_share",
     )
-
     if monthly_div_per_share == 0.0:
         st.info("월 주당 분배금(원)을 입력하면 예상 월/연 분배금이 계산됩니다.")
 
