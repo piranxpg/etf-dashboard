@@ -44,9 +44,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# =========================
-# Title
-# =========================
 st.markdown('<div class="etf-title">📈 국내 ETF 수익률/배당금 분석기</div>', unsafe_allow_html=True)
 st.caption("※ 모든 데이터는 실시간이 아니며, 투자 참고용입니다. (데이터 오류/지연 가능)")
 
@@ -54,9 +51,10 @@ st.caption("※ 모든 데이터는 실시간이 아니며, 투자 참고용입�
 # LocalStorage (Browser favorites)
 # =========================
 localS = LocalStorage()
-LS_FAV_KEY = "etf_dashboard_favorites_v1"
+LS_FAV_KEY = "etf_dashboard_favorites_symbol_v1"
 
-def _safe_parse_favs(raw):
+def _safe_parse_symbols(raw) -> list[str]:
+    """localStorage에서 심볼 리스트를 안전하게 꺼냄"""
     if raw is None:
         return []
     if isinstance(raw, list):
@@ -70,19 +68,20 @@ def _safe_parse_favs(raw):
             if isinstance(data, list):
                 return [x for x in data if isinstance(x, str)]
         except Exception:
+            # 예전 포맷(혹은 단일 문자열) 방어
             return [raw]
     return []
 
-def load_favorites_from_ls() -> list[str]:
+def load_favorites_symbols() -> list[str]:
     try:
         raw = localS.getItem(LS_FAV_KEY)
     except Exception:
         raw = None
-    return _safe_parse_favs(raw)
+    return _safe_parse_symbols(raw)
 
-def save_favorites_to_ls(favs: list[str]) -> None:
+def save_favorites_symbols(symbols: list[str]) -> None:
     try:
-        localS.setItem(LS_FAV_KEY, json.dumps(favs, ensure_ascii=False))
+        localS.setItem(LS_FAV_KEY, json.dumps(symbols, ensure_ascii=False))
     except Exception:
         pass
 
@@ -133,22 +132,27 @@ st.sidebar.header("🔍 검색 옵션")
 with st.spinner("국내 모든 ETF 정보를 가져오는 중입니다..."):
     etf_list = get_etf_list()
 
-# 즐겨찾기: localStorage → session_state (최초 1회만)
-if "favorite_etfs" not in st.session_state:
-    st.session_state.favorite_etfs = load_favorites_from_ls()
+# 심볼→이름 매핑
+symbol_to_name = dict(zip(etf_list["Symbol"], etf_list["Name"]))
 
-# 즐겨찾기 선택을 안전하게 반영하기 위한 대기 키
-if "pending_etf_option" not in st.session_state:
-    st.session_state.pending_etf_option = ""
+def label_symbol(sym: str) -> str:
+    nm = symbol_to_name.get(sym, "")
+    return f"{sym} | {nm}" if nm else sym
 
-# ✅ 즐겨찾기에서 선택한 ETF를 불러올 때 검색어도 안전하게 초기화하기 위한 대기 키
+# 즐겨찾기(심볼) 로드 (최초 1회)
+if "favorite_symbols" not in st.session_state:
+    st.session_state.favorite_symbols = load_favorites_symbols()
+
+# pending 값들 (위젯 생성 전 적용용)
+if "pending_symbol" not in st.session_state:
+    st.session_state.pending_symbol = None  # None이면 미적용
 if "pending_search_keyword" not in st.session_state:
-    st.session_state.pending_search_keyword = ""
+    st.session_state.pending_search_keyword = None  # None이면 미적용 (빈문자열도 적용 가능)
 
-# ✅ 즐겨찾기에서 "검색어 비우기" 예약이 들어오면, 위젯 생성 전에 반영
-if st.session_state.pending_search_keyword != "":
+# 검색어 예약 적용 (빈 문자열도 적용되어야 해서 None 센티넬 사용)
+if st.session_state.pending_search_keyword is not None:
     st.session_state.search_keyword = st.session_state.pending_search_keyword
-    st.session_state.pending_search_keyword = ""
+    st.session_state.pending_search_keyword = None
 
 search_keyword = st.sidebar.text_input(
     "ETF 검색 (코드/이름)",
@@ -156,45 +160,48 @@ search_keyword = st.sidebar.text_input(
     key="search_keyword",
 )
 
-filtered = etf_list
+# 후보 심볼 목록(필터 적용)
+filtered_df = etf_list
 if search_keyword.strip():
     kw = search_keyword.strip().lower()
-    filtered = filtered[
-        filtered["Symbol"].str.lower().str.contains(kw, na=False)
-        | filtered["Name"].str.lower().str.contains(kw, na=False)
+    filtered_df = filtered_df[
+        filtered_df["Symbol"].str.lower().str.contains(kw, na=False)
+        | filtered_df["Name"].str.lower().str.contains(kw, na=False)
     ]
 
 MAX_OPTIONS = 800
-if len(filtered) > MAX_OPTIONS and not search_keyword.strip():
+if len(filtered_df) > MAX_OPTIONS and not search_keyword.strip():
     st.sidebar.warning(f"ETF가 너무 많아 상위 {MAX_OPTIONS}개만 표시합니다. 검색어를 입력해 좁혀보세요.")
-    filtered = filtered.head(MAX_OPTIONS)
+    filtered_df = filtered_df.head(MAX_OPTIONS)
 
-if filtered.empty:
+if filtered_df.empty:
     st.warning("검색 결과가 없습니다. 다른 키워드로 검색해보세요.")
     st.stop()
 
-options = (filtered["Symbol"] + " | " + filtered["Name"]).tolist()
+filtered_symbols = filtered_df["Symbol"].tolist()
 
-if "selected_etf_option" not in st.session_state:
-    st.session_state.selected_etf_option = options[0]
+# selected_symbol 기본값
+if "selected_symbol" not in st.session_state:
+    st.session_state.selected_symbol = filtered_symbols[0]
 
-# 즐겨찾기에서 선택한 ETF를 다음 run 시작 시점에 안전하게 반영
-if st.session_state.pending_etf_option:
-    st.session_state.selected_etf_option = st.session_state.pending_etf_option
-    st.session_state.pending_etf_option = ""
+# pending 즐겨찾기 심볼 적용(위젯 생성 전)
+if st.session_state.pending_symbol is not None:
+    st.session_state.selected_symbol = st.session_state.pending_symbol
+    st.session_state.pending_symbol = None
 
-# 선택되어 있던 ETF가 검색 결과에서 사라진 경우에도 selectbox가 깨지지 않게 옵션 보강
-if st.session_state.selected_etf_option not in options:
-    selected_symbol = st.session_state.selected_etf_option.split(" | ", 1)[0]
-    selected_row = etf_list[etf_list["Symbol"] == selected_symbol]
-    if not selected_row.empty:
-        extra_option = f"{selected_row.iloc[0]['Symbol']} | {selected_row.iloc[0]['Name']}"
-        options = [extra_option] + options
-    else:
-        st.session_state.selected_etf_option = options[0]
+# 현재 선택 심볼이 필터 결과에 없으면, 맨 앞에 붙여 selectbox가 튕기지 않게
+if st.session_state.selected_symbol not in filtered_symbols:
+    filtered_symbols = [st.session_state.selected_symbol] + filtered_symbols
 
-selected_option = st.sidebar.selectbox("분석할 ETF를 선택하세요:", options, key="selected_etf_option")
-code, name = selected_option.split(" | ", 1)
+selected_symbol = st.sidebar.selectbox(
+    "분석할 ETF를 선택하세요:",
+    filtered_symbols,
+    format_func=label_symbol,
+    key="selected_symbol",
+)
+
+code = selected_symbol
+name = symbol_to_name.get(code, "")
 
 # =========================
 # ETF 변경 시: 분배율/분배금 입력값 자동 0 리셋
@@ -202,7 +209,6 @@ code, name = selected_option.split(" | ", 1)
 if "last_symbol" not in st.session_state:
     st.session_state.last_symbol = code
 
-# 입력값(위젯 키) 세션 기본값
 if "annual_yield" not in st.session_state:
     st.session_state.annual_yield = 0.0
 if "monthly_div_per_share" not in st.session_state:
@@ -220,41 +226,41 @@ st.sidebar.divider()
 st.sidebar.subheader("⭐ 즐겨찾기 ETF")
 
 MAX_FAVORITES = 10
-current_etf = f"{code} | {name}"
-
 c1, c2 = st.sidebar.columns(2)
+
 with c1:
-    if st.button("추가", key="add_favorite", use_container_width=True):
-        if current_etf in st.session_state.favorite_etfs:
+    if st.button("추가", key="add_fav", use_container_width=True):
+        if code in st.session_state.favorite_symbols:
             st.sidebar.info("이미 즐겨찾기에 등록된 ETF입니다.")
-        elif len(st.session_state.favorite_etfs) >= MAX_FAVORITES:
+        elif len(st.session_state.favorite_symbols) >= MAX_FAVORITES:
             st.sidebar.warning(f"즐겨찾기는 최대 {MAX_FAVORITES}개까지 등록할 수 있습니다.")
         else:
-            st.session_state.favorite_etfs.append(current_etf)
-            save_favorites_to_ls(st.session_state.favorite_etfs)
+            st.session_state.favorite_symbols.append(code)
+            save_favorites_symbols(st.session_state.favorite_symbols)
             st.sidebar.success("즐겨찾기에 추가했습니다.")
 
 with c2:
-    if st.button("해제", key="remove_favorite", use_container_width=True):
-        if current_etf in st.session_state.favorite_etfs:
-            st.session_state.favorite_etfs.remove(current_etf)
-            save_favorites_to_ls(st.session_state.favorite_etfs)
+    if st.button("해제", key="remove_fav", use_container_width=True):
+        if code in st.session_state.favorite_symbols:
+            st.session_state.favorite_symbols.remove(code)
+            save_favorites_symbols(st.session_state.favorite_symbols)
             st.sidebar.success("즐겨찾기에서 해제했습니다.")
         else:
             st.sidebar.info("현재 ETF는 즐겨찾기에 없습니다.")
 
-st.sidebar.caption(f"등록된 즐겨찾기: {len(st.session_state.favorite_etfs)}/{MAX_FAVORITES}")
+st.sidebar.caption(f"등록된 즐겨찾기: {len(st.session_state.favorite_symbols)}/{MAX_FAVORITES}")
 
-if st.session_state.favorite_etfs:
-    favorite_choice = st.sidebar.radio(
+if st.session_state.favorite_symbols:
+    fav_choice = st.sidebar.radio(
         "내 즐겨찾기 목록",
-        st.session_state.favorite_etfs,
-        key="favorite_choice",
+        st.session_state.favorite_symbols,
+        format_func=label_symbol,
+        key="fav_choice",
     )
-    if st.sidebar.button("선택한 ETF 보기", key="load_favorite", use_container_width=True):
-        # ✅ 즐겨찾기 불러올 때 검색어를 비워서 옵션 튕김(2번 선택처럼 보이는 현상)을 방지
+    if st.sidebar.button("선택한 ETF 보기", key="load_fav", use_container_width=True):
+        # ✅ 즐겨찾기 로딩 시 검색어를 '확실히' 비움(빈 문자열 적용 위해 None이 아닌 ""로 예약)
         st.session_state.pending_search_keyword = ""
-        st.session_state.pending_etf_option = favorite_choice
+        st.session_state.pending_symbol = fav_choice
         st.rerun()
 else:
     st.sidebar.caption("즐겨찾기 ETF를 등록하면 여기서 빠르게 불러올 수 있습니다.")
