@@ -54,13 +54,12 @@ st.caption("※ 모든 데이터는 실시간이 아니며, 투자 참고용입�
 # LocalStorage (Browser)
 # =========================
 localS = LocalStorage()
-LS_FAV_KEY = "etf_dashboard_favorites_v1"  # 브라우저 localStorage 저장 키
+LS_FAV_KEY = "etf_dashboard_favorites_v1"
 
 def _safe_parse_favs(raw):
     """localStorage에서 읽어온 값을 즐겨찾기 리스트로 안전 변환"""
     if raw is None:
         return []
-    # streamlit-local-storage는 문자열/기타 형태가 올 수 있어 안전하게 처리
     if isinstance(raw, list):
         return [x for x in raw if isinstance(x, str)]
     if isinstance(raw, str):
@@ -72,16 +71,15 @@ def _safe_parse_favs(raw):
             if isinstance(data, list):
                 return [x for x in data if isinstance(x, str)]
         except Exception:
-            # 혹시 "A | B" 단일 문자열로 저장돼 있던 경우
+            # 혹시 단일 문자열로 저장돼 있던 경우
             return [raw]
     return []
 
 def _persist_favs_to_localstorage(favs: list[str]):
-    """즐겨찾기를 localStorage에 저장(문자열 JSON)"""
+    """즐겨찾기를 localStorage에 저장(JSON 문자열)"""
     try:
         localS.setItem(LS_FAV_KEY, json.dumps(favs, ensure_ascii=False))
     except Exception:
-        # 저장 실패해도 앱이 죽지 않게
         pass
 
 # =========================
@@ -132,10 +130,18 @@ with st.spinner("국내 모든 ETF 정보를 가져오는 중입니다..."):
     etf_list = get_etf_list()
 
 # ✅ 즐겨찾기 로드: localStorage → session_state (최초 1회)
+# 컴포넌트 특성상 첫 run에 None이 올 수도 있으니, 아직 로드 안됐으면 다시 시도하게 설계
 if "favorite_etfs" not in st.session_state:
-    # getItem은 컴포넌트 렌더링 특성상 최초 1회 None일 수도 있어 안전 처리
-    raw_favs = localS.getItem(LS_FAV_KEY, key="ls_get_favs")  # key는 Streamlit 위젯 키
-    st.session_state.favorite_etfs = _safe_parse_favs(raw_favs)
+    st.session_state.favorite_etfs = []
+if "favorites_loaded" not in st.session_state:
+    st.session_state.favorites_loaded = False
+
+if not st.session_state.favorites_loaded:
+    raw_favs = localS.getItem(LS_FAV_KEY)  # ✅ key 인자 제거
+    # raw_favs가 None이면 다음 rerun에서 다시 시도
+    if raw_favs is not None:
+        st.session_state.favorite_etfs = _safe_parse_favs(raw_favs)
+        st.session_state.favorites_loaded = True
 
 # 즐겨찾기 선택을 안전하게 반영하기 위한 "대기" 키
 if "pending_etf_option" not in st.session_state:
