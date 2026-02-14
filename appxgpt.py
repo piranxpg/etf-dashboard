@@ -2,6 +2,9 @@ import streamlit as st
 import FinanceDataReader as fdr
 import pandas as pd
 from datetime import timedelta, date
+import json
+
+from streamlit_local_storage import LocalStorage  # ✅ localStorage 컴포넌트
 
 # =========================
 # Page Config
@@ -48,6 +51,40 @@ st.markdown('<div class="etf-title">📈 국내 ETF 수익률/배당금 분석�
 st.caption("※ 모든 데이터는 실시간이 아니며, 투자 참고용입니다. (데이터 오류/지연 가능)")
 
 # =========================
+# LocalStorage (Browser)
+# =========================
+localS = LocalStorage()
+LS_FAV_KEY = "etf_dashboard_favorites_v1"  # 브라우저 localStorage 저장 키
+
+def _safe_parse_favs(raw):
+    """localStorage에서 읽어온 값을 즐겨찾기 리스트로 안전 변환"""
+    if raw is None:
+        return []
+    # streamlit-local-storage는 문자열/기타 형태가 올 수 있어 안전하게 처리
+    if isinstance(raw, list):
+        return [x for x in raw if isinstance(x, str)]
+    if isinstance(raw, str):
+        s = raw.strip()
+        if not s:
+            return []
+        try:
+            data = json.loads(s)
+            if isinstance(data, list):
+                return [x for x in data if isinstance(x, str)]
+        except Exception:
+            # 혹시 "A | B" 단일 문자열로 저장돼 있던 경우
+            return [raw]
+    return []
+
+def _persist_favs_to_localstorage(favs: list[str]):
+    """즐겨찾기를 localStorage에 저장(문자열 JSON)"""
+    try:
+        localS.setItem(LS_FAV_KEY, json.dumps(favs, ensure_ascii=False))
+    except Exception:
+        # 저장 실패해도 앱이 죽지 않게
+        pass
+
+# =========================
 # Data Loaders (Cached)
 # =========================
 @st.cache_data(ttl=60 * 60 * 6)  # 6 hours
@@ -60,7 +97,6 @@ def get_etf_list() -> pd.DataFrame:
     df["Name"] = df["Name"].astype(str)
     return df
 
-
 @st.cache_data(ttl=60 * 10)  # 10 minutes
 def get_price_data(symbol: str, start: date, end: date) -> pd.DataFrame:
     df = fdr.DataReader(symbol, start, end)
@@ -70,17 +106,14 @@ def get_price_data(symbol: str, start: date, end: date) -> pd.DataFrame:
         return pd.DataFrame()
     return df.sort_index()
 
-
 # =========================
 # Helpers
 # =========================
 def fmt_pct(x):
     return "-" if x is None else f"{x:.2f}%"
 
-
 def fmt_won(x: float) -> str:
     return f"{x:,.0f}원"
-
 
 def get_return_by_trading_days(df_price: pd.DataFrame, current_price: float, n: int):
     if len(df_price) <= n:
@@ -90,7 +123,6 @@ def get_return_by_trading_days(df_price: pd.DataFrame, current_price: float, n: 
         return None
     return (current_price / past_price - 1) * 100
 
-
 # =========================
 # Sidebar - Search & Select
 # =========================
@@ -99,9 +131,11 @@ st.sidebar.header("🔍 검색 옵션")
 with st.spinner("국내 모든 ETF 정보를 가져오는 중입니다..."):
     etf_list = get_etf_list()
 
-# 즐겨찾기 리스트 초기화(세션 최초 1회)
+# ✅ 즐겨찾기 로드: localStorage → session_state (최초 1회)
 if "favorite_etfs" not in st.session_state:
-    st.session_state.favorite_etfs = []
+    # getItem은 컴포넌트 렌더링 특성상 최초 1회 None일 수도 있어 안전 처리
+    raw_favs = localS.getItem(LS_FAV_KEY, key="ls_get_favs")  # key는 Streamlit 위젯 키
+    st.session_state.favorite_etfs = _safe_parse_favs(raw_favs)
 
 # 즐겨찾기 선택을 안전하게 반영하기 위한 "대기" 키
 if "pending_etf_option" not in st.session_state:
@@ -167,12 +201,14 @@ with c1:
             st.sidebar.warning(f"즐겨찾기는 최대 {MAX_FAVORITES}개까지 등록할 수 있습니다.")
         else:
             st.session_state.favorite_etfs.append(current_etf)
+            _persist_favs_to_localstorage(st.session_state.favorite_etfs)
             st.sidebar.success("즐겨찾기에 추가했습니다.")
 
 with c2:
     if st.button("해제", key="remove_favorite", use_container_width=True):
         if current_etf in st.session_state.favorite_etfs:
             st.session_state.favorite_etfs.remove(current_etf)
+            _persist_favs_to_localstorage(st.session_state.favorite_etfs)
             st.sidebar.success("즐겨찾기에서 해제했습니다.")
         else:
             st.sidebar.info("현재 ETF는 즐겨찾기에 없습니다.")
@@ -186,8 +222,6 @@ if st.session_state.favorite_etfs:
         key="favorite_choice",
     )
     if st.sidebar.button("선택한 ETF 보기", key="load_favorite", use_container_width=True):
-        # ✅ selectbox의 key(selected_etf_option)를 같은 run에서 직접 건드리지 않고,
-        #    다음 run에서 반영되도록 pending_etf_option에 저장
         st.session_state.pending_etf_option = favorite_choice
         st.rerun()
 else:
