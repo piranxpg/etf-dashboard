@@ -76,9 +76,6 @@ def _safe_parse_favs(raw):
 def load_favorites_from_ls() -> list[str]:
     try:
         raw = localS.getItem(LS_FAV_KEY)
-    except TypeError:
-        # 패키지/버전에 따라 시그니처가 다를 수 있어 방어
-        raw = None
     except Exception:
         raw = None
     return _safe_parse_favs(raw)
@@ -144,7 +141,20 @@ if "favorite_etfs" not in st.session_state:
 if "pending_etf_option" not in st.session_state:
     st.session_state.pending_etf_option = ""
 
-search_keyword = st.sidebar.text_input("ETF 검색 (코드/이름)", value="", key="search_keyword")
+# ✅ 즐겨찾기에서 선택한 ETF를 불러올 때 검색어도 안전하게 초기화하기 위한 대기 키
+if "pending_search_keyword" not in st.session_state:
+    st.session_state.pending_search_keyword = ""
+
+# ✅ 즐겨찾기에서 "검색어 비우기" 예약이 들어오면, 위젯 생성 전에 반영
+if st.session_state.pending_search_keyword != "":
+    st.session_state.search_keyword = st.session_state.pending_search_keyword
+    st.session_state.pending_search_keyword = ""
+
+search_keyword = st.sidebar.text_input(
+    "ETF 검색 (코드/이름)",
+    value=st.session_state.get("search_keyword", ""),
+    key="search_keyword",
+)
 
 filtered = etf_list
 if search_keyword.strip():
@@ -242,6 +252,8 @@ if st.session_state.favorite_etfs:
         key="favorite_choice",
     )
     if st.sidebar.button("선택한 ETF 보기", key="load_favorite", use_container_width=True):
+        # ✅ 즐겨찾기 불러올 때 검색어를 비워서 옵션 튕김(2번 선택처럼 보이는 현상)을 방지
+        st.session_state.pending_search_keyword = ""
         st.session_state.pending_etf_option = favorite_choice
         st.rerun()
 else:
@@ -350,7 +362,7 @@ if mode.startswith("연 분배율"):
         "예상 연 분배율(%)",
         min_value=0.0,
         step=0.1,
-        key="annual_yield",   # ✅ key로 유지(ETF 바뀌면 위에서 0으로 리셋)
+        key="annual_yield",
     )
 
     if annual_yield == 0.0:
@@ -367,7 +379,7 @@ else:
         "월 주당 분배금(원)",
         min_value=0.0,
         step=10.0,
-        key="monthly_div_per_share",  # ✅ key로 유지(ETF 바뀌면 위에서 0으로 리셋)
+        key="monthly_div_per_share",
     )
 
     if monthly_div_per_share == 0.0:
