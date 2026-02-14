@@ -60,6 +60,7 @@ def get_etf_list() -> pd.DataFrame:
     df["Name"] = df["Name"].astype(str)
     return df
 
+
 @st.cache_data(ttl=60 * 10)  # 10 minutes
 def get_price_data(symbol: str, start: date, end: date) -> pd.DataFrame:
     df = fdr.DataReader(symbol, start, end)
@@ -69,14 +70,17 @@ def get_price_data(symbol: str, start: date, end: date) -> pd.DataFrame:
         return pd.DataFrame()
     return df.sort_index()
 
+
 # =========================
 # Helpers
 # =========================
 def fmt_pct(x):
     return "-" if x is None else f"{x:.2f}%"
 
+
 def fmt_won(x: float) -> str:
     return f"{x:,.0f}원"
+
 
 def get_return_by_trading_days(df_price: pd.DataFrame, current_price: float, n: int):
     if len(df_price) <= n:
@@ -85,6 +89,7 @@ def get_return_by_trading_days(df_price: pd.DataFrame, current_price: float, n: 
     if past_price == 0:
         return None
     return (current_price / past_price - 1) * 100
+
 
 # =========================
 # Sidebar - Search & Select
@@ -122,6 +127,7 @@ options = (filtered["Symbol"] + " | " + filtered["Name"]).tolist()
 if "selected_etf_option" not in st.session_state:
     st.session_state.selected_etf_option = options[0]
 
+# 선택되어 있던 ETF가 검색 결과에서 사라진 경우에도 selectbox가 깨지지 않게 옵션 보강
 if st.session_state.selected_etf_option not in options:
     selected_symbol = st.session_state.selected_etf_option.split(" | ", 1)[0]
     selected_row = etf_list[etf_list["Symbol"] == selected_symbol]
@@ -171,50 +177,8 @@ if st.session_state.favorite_etfs:
         key="favorite_choice",
     )
     if st.sidebar.button("선택한 ETF 보기", key="load_favorite", use_container_width=True):
-        st.session_state.selected_etf_option = favorite_choice
-        st.rerun()
-else:
-    st.sidebar.caption("즐겨찾기 ETF를 등록하면 여기서 빠르게 불러올 수 있습니다.")
-
- main
-
-# =========================
-# Sidebar - Favorites
-# =========================
-st.sidebar.divider()
-st.sidebar.subheader("⭐ 즐겨찾기 ETF")
-
-MAX_FAVORITES = 10
-current_etf = f"{code} | {name}"
-
-c1, c2 = st.sidebar.columns(2)
-with c1:
-    if st.button("추가", key="add_favorite", use_container_width=True):
-        if current_etf in st.session_state.favorite_etfs:
-            st.sidebar.info("이미 즐겨찾기에 등록된 ETF입니다.")
-        elif len(st.session_state.favorite_etfs) >= MAX_FAVORITES:
-            st.sidebar.warning(f"즐겨찾기는 최대 {MAX_FAVORITES}개까지 등록할 수 있습니다.")
-        else:
-            st.session_state.favorite_etfs.append(current_etf)
-            st.sidebar.success("즐겨찾기에 추가했습니다.")
-
-with c2:
-    if st.button("해제", key="remove_favorite", use_container_width=True):
-        if current_etf in st.session_state.favorite_etfs:
-            st.session_state.favorite_etfs.remove(current_etf)
-            st.sidebar.success("즐겨찾기에서 해제했습니다.")
-        else:
-            st.sidebar.info("현재 ETF는 즐겨찾기에 없습니다.")
-
-st.sidebar.caption(f"등록된 즐겨찾기: {len(st.session_state.favorite_etfs)}/{MAX_FAVORITES}")
-
-if st.session_state.favorite_etfs:
-    favorite_choice = st.sidebar.radio(
-        "내 즐겨찾기 목록",
-        st.session_state.favorite_etfs,
-        key="favorite_choice",
-    )
-    if st.sidebar.button("선택한 ETF 보기", key="load_favorite", use_container_width=True):
+        # 필요하면 검색어를 비워 UX를 깔끔하게 만들 수 있음(원치 않으면 아래 줄 삭제)
+        # st.session_state.search_keyword = ""
         st.session_state.selected_etf_option = favorite_choice
         st.rerun()
 else:
@@ -308,7 +272,7 @@ investment = st.number_input(
 st.session_state.investment = int(investment)
 
 if investment == 0:
-    st.info("투자금을 입력해주세요")
+    st.info("투자금을 입력해주세요.")
 
 mode = st.radio(
     "계산 방식",
