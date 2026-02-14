@@ -4,7 +4,7 @@ import pandas as pd
 from datetime import timedelta, date
 import json
 
-from streamlit_local_storage import LocalStorage  # ✅ localStorage 컴포넌트
+from streamlit_local_storage import LocalStorage  # 브라우저 localStorage
 
 # =========================
 # Page Config
@@ -51,13 +51,12 @@ st.markdown('<div class="etf-title">📈 국내 ETF 수익률/배당금 분석�
 st.caption("※ 모든 데이터는 실시간이 아니며, 투자 참고용입니다. (데이터 오류/지연 가능)")
 
 # =========================
-# LocalStorage (Browser)
+# LocalStorage (Browser favorites)
 # =========================
 localS = LocalStorage()
 LS_FAV_KEY = "etf_dashboard_favorites_v1"
 
 def _safe_parse_favs(raw):
-    """localStorage에서 읽어온 값을 즐겨찾기 리스트로 안전 변환"""
     if raw is None:
         return []
     if isinstance(raw, list):
@@ -71,12 +70,20 @@ def _safe_parse_favs(raw):
             if isinstance(data, list):
                 return [x for x in data if isinstance(x, str)]
         except Exception:
-            # 혹시 단일 문자열로 저장돼 있던 경우
             return [raw]
     return []
 
-def _persist_favs_to_localstorage(favs: list[str]):
-    """즐겨찾기를 localStorage에 저장(JSON 문자열)"""
+def load_favorites_from_ls() -> list[str]:
+    try:
+        raw = localS.getItem(LS_FAV_KEY)
+    except TypeError:
+        # 패키지/버전에 따라 시그니처가 다를 수 있어 방어
+        raw = None
+    except Exception:
+        raw = None
+    return _safe_parse_favs(raw)
+
+def save_favorites_to_ls(favs: list[str]) -> None:
     try:
         localS.setItem(LS_FAV_KEY, json.dumps(favs, ensure_ascii=False))
     except Exception:
@@ -129,21 +136,11 @@ st.sidebar.header("🔍 검색 옵션")
 with st.spinner("국내 모든 ETF 정보를 가져오는 중입니다..."):
     etf_list = get_etf_list()
 
-# ✅ 즐겨찾기 로드: localStorage → session_state (최초 1회)
-# 컴포넌트 특성상 첫 run에 None이 올 수도 있으니, 아직 로드 안됐으면 다시 시도하게 설계
+# 즐겨찾기: localStorage → session_state (최초 1회만)
 if "favorite_etfs" not in st.session_state:
-    st.session_state.favorite_etfs = []
-if "favorites_loaded" not in st.session_state:
-    st.session_state.favorites_loaded = False
+    st.session_state.favorite_etfs = load_favorites_from_ls()
 
-if not st.session_state.favorites_loaded:
-    raw_favs = localS.getItem(LS_FAV_KEY)  # ✅ key 인자 제거
-    # raw_favs가 None이면 다음 rerun에서 다시 시도
-    if raw_favs is not None:
-        st.session_state.favorite_etfs = _safe_parse_favs(raw_favs)
-        st.session_state.favorites_loaded = True
-
-# 즐겨찾기 선택을 안전하게 반영하기 위한 "대기" 키
+# 즐겨찾기 선택을 안전하게 반영하기 위한 대기 키
 if "pending_etf_option" not in st.session_state:
     st.session_state.pending_etf_option = ""
 
@@ -171,7 +168,7 @@ options = (filtered["Symbol"] + " | " + filtered["Name"]).tolist()
 if "selected_etf_option" not in st.session_state:
     st.session_state.selected_etf_option = options[0]
 
-# ✅ 즐겨찾기에서 선택한 ETF를 다음 run 시작 시점(위젯 생성 전)에 안전하게 반영
+# 즐겨찾기에서 선택한 ETF를 다음 run 시작 시점에 안전하게 반영
 if st.session_state.pending_etf_option:
     st.session_state.selected_etf_option = st.session_state.pending_etf_option
     st.session_state.pending_etf_option = ""
@@ -188,6 +185,23 @@ if st.session_state.selected_etf_option not in options:
 
 selected_option = st.sidebar.selectbox("분석할 ETF를 선택하세요:", options, key="selected_etf_option")
 code, name = selected_option.split(" | ", 1)
+
+# =========================
+# ETF 변경 시: 분배율/분배금 입력값 자동 0 리셋
+# =========================
+if "last_symbol" not in st.session_state:
+    st.session_state.last_symbol = code
+
+# 입력값(위젯 키) 세션 기본값
+if "annual_yield" not in st.session_state:
+    st.session_state.annual_yield = 0.0
+if "monthly_div_per_share" not in st.session_state:
+    st.session_state.monthly_div_per_share = 0.0
+
+if st.session_state.last_symbol != code:
+    st.session_state.last_symbol = code
+    st.session_state.annual_yield = 0.0
+    st.session_state.monthly_div_per_share = 0.0
 
 # =========================
 # Sidebar - Favorites
@@ -207,14 +221,14 @@ with c1:
             st.sidebar.warning(f"즐겨찾기는 최대 {MAX_FAVORITES}개까지 등록할 수 있습니다.")
         else:
             st.session_state.favorite_etfs.append(current_etf)
-            _persist_favs_to_localstorage(st.session_state.favorite_etfs)
+            save_favorites_to_ls(st.session_state.favorite_etfs)
             st.sidebar.success("즐겨찾기에 추가했습니다.")
 
 with c2:
     if st.button("해제", key="remove_favorite", use_container_width=True):
         if current_etf in st.session_state.favorite_etfs:
             st.session_state.favorite_etfs.remove(current_etf)
-            _persist_favs_to_localstorage(st.session_state.favorite_etfs)
+            save_favorites_to_ls(st.session_state.favorite_etfs)
             st.sidebar.success("즐겨찾기에서 해제했습니다.")
         else:
             st.sidebar.info("현재 ETF는 즐겨찾기에 없습니다.")
@@ -332,7 +346,12 @@ mode = st.radio(
 estimated_monthly = 0.0
 
 if mode.startswith("연 분배율"):
-    annual_yield = st.number_input("예상 연 분배율(%)", min_value=0.0, value=0.0, step=0.1)
+    annual_yield = st.number_input(
+        "예상 연 분배율(%)",
+        min_value=0.0,
+        step=0.1,
+        key="annual_yield",   # ✅ key로 유지(ETF 바뀌면 위에서 0으로 리셋)
+    )
 
     if annual_yield == 0.0:
         st.info("연 분배율(%)을 입력하면 예상 월/연 분배금이 계산됩니다.")
@@ -344,7 +363,12 @@ if mode.startswith("연 분배율"):
     d2.metric("예상 연 배당금(분배금)", fmt_won(estimated_monthly * 12))
 
 else:
-    monthly_div_per_share = st.number_input("월 주당 분배금(원)", min_value=0.0, value=0.0, step=10.0)
+    monthly_div_per_share = st.number_input(
+        "월 주당 분배금(원)",
+        min_value=0.0,
+        step=10.0,
+        key="monthly_div_per_share",  # ✅ key로 유지(ETF 바뀌면 위에서 0으로 리셋)
+    )
 
     if monthly_div_per_share == 0.0:
         st.info("월 주당 분배금(원)을 입력하면 예상 월/연 분배금이 계산됩니다.")
