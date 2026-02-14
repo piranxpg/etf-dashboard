@@ -200,15 +200,18 @@ if "annual_yield" not in st.session_state:
 if "monthly_div_per_share" not in st.session_state:
     st.session_state.monthly_div_per_share = 0.0
 
-# ✅ 계산 방식 라디오도 세션에 저장 (ETF 바꿔도 유지)
+# ✅ 기본 계산 모드: 월 주당 분배금(원)
+MONTHLY_MODE = "월 주당 분배금(원)으로 계산 (더 직관적)"
+ANNUAL_MODE  = "연 분배율(%)로 계산 (간편)"
+
 if "calc_mode" not in st.session_state:
-    st.session_state.calc_mode = "연 분배율(%)로 계산 (간편/추천)"
+    st.session_state.calc_mode = MONTHLY_MODE
 
 if st.session_state.last_symbol != code:
     st.session_state.last_symbol = code
     st.session_state.annual_yield = 0.0
     st.session_state.monthly_div_per_share = 0.0
-    # calc_mode는 유지 (원하시면 여기서도 초기화 가능)
+    # calc_mode는 유지(월/연 어떤 모드든 그대로)
 
 # =========================
 # Sidebar - Favorites
@@ -345,17 +348,17 @@ st.session_state.investment = int(investment)
 if investment == 0:
     st.info("투자금을 입력해주세요.")
 
-# ✅ 라디오도 key로 고정(ETF 바꿔도 모드 유지)
+# ✅ (순서 변경) 월 분배금 모드를 앞으로 + 기본도 월 분배금
 mode = st.radio(
     "계산 방식",
-    ["연 분배율(%)로 계산 (간편/추천)", "월 주당 분배금(원)으로 계산 (더 직접적)"],
+    [MONTHLY_MODE, ANNUAL_MODE],  # ✅ 월 → 연 순서
     key="calc_mode",
     horizontal=True,
 )
 
 estimated_monthly = 0.0
 
-if mode.startswith("연 분배율"):
+if mode == ANNUAL_MODE:
     annual_yield = st.number_input(
         "예상 연 분배율(%)",
         min_value=0.0,
