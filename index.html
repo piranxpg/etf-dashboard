@@ -7,23 +7,26 @@
   <meta name="description" content="국내 ETF 수익률과 배당금(분배금) 시뮬레이션을 빠르게 확인하는 간단 대시보드. 데이터는 참고용이며 지연/오류가 있을 수 있습니다." />
   <meta name="robots" content="index,follow" />
 
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#0b0f17">
+
   <!-- Open Graph (카톡/네이버 공유 미리보기) -->
   <meta property="og:type" content="website" />
   <meta property="og:title" content="K-ETF Today" />
   <meta property="og:description" content="국내 ETF 수익률·배당금(분배금) 시뮬레이션 대시보드" />
-  <meta property="og:url" content="https://ketftoday.example/" />
+  <meta property="og:url" content="https://ketftoday.netlify.app/" />
   <meta property="og:locale" content="ko_KR" />
 
-  <!-- Canonical (나중에 도메인 연결 후 실제 주소로 교체 권장) -->
-  <link rel="canonical" href="https://ketftoday.example/" />
+  <!-- Canonical -->
+  <link rel="canonical" href="https://ketftoday.netlify.app/" />
 
-  <!-- (선택) 아주 가벼운 구조화 데이터 -->
   <script type="application/ld+json">
   {
     "@context":"https://schema.org",
     "@type":"WebSite",
     "name":"K-ETF Today",
-    "url":"https://ketftoday.example/"
+    "url":"https://ketftoday.netlify.app/"
   }
   </script>
 
@@ -71,10 +74,7 @@
       padding: 24px;
     }
 
-    .wrap {
-      width: 100%;
-      max-width: 860px;
-    }
+    .wrap { width: 100%; max-width: 860px; }
 
     .card {
       border: 1px solid var(--border);
@@ -156,15 +156,8 @@
     }
     a.btn:active { transform: translateY(1px); }
 
-    .primary {
-      background: var(--btn);
-      color: var(--btnText);
-    }
-    .secondary {
-      background: var(--btn2);
-      color: var(--btn2Text);
-      border-color: var(--border);
-    }
+    .primary { background: var(--btn); color: var(--btnText); }
+    .secondary { background: var(--btn2); color: var(--btn2Text); border-color: var(--border); }
 
     .note {
       margin-top: 14px;
@@ -172,6 +165,18 @@
       font-size: 12.5px;
       line-height: 1.5;
     }
+
+    .install-tip{
+      margin-top: 10px;
+      padding: 10px 12px;
+      border: 1px dashed var(--border);
+      border-radius: 12px;
+      color: var(--muted);
+      font-size: 12.5px;
+      line-height: 1.5;
+      background: rgba(255,255,255,0.03);
+    }
+
     .footer {
       margin-top: 14px;
       display: flex;
@@ -191,8 +196,6 @@
       .footer { justify-content: center; text-align: center; }
     }
   </style>
-<link rel="manifest" href="/manifest.webmanifest">
-<meta name="theme-color" content="#0b0f17">
 </head>
 
 <body>
@@ -216,12 +219,17 @@
       </div>
 
       <div class="actions">
-        <a class="btn primary" href="https://ketftoday-dashboard.streamlit.app/" rel="noopener">
+        <a class="btn primary" href="https://ketftoday-dashboard.streamlit.app/" target="_blank" rel="noopener noreferrer">
           대시보드 열기 →
         </a>
-        <a class="btn secondary" href="https://ketftoday-dashboard.streamlit.app/" rel="noopener">
+        <a class="btn secondary" href="https://ketftoday-dashboard.streamlit.app/" target="_blank" rel="noopener noreferrer">
           Streamlit 앱으로 바로가기
         </a>
+      </div>
+
+      <div class="install-tip">
+        📌 앱처럼 설치하려면: 크롬 메뉴(⋮) → <b>앱 설치</b> 또는 <b>홈 화면에 추가</b><br/>
+        ※ 기존 “바로가기”를 만들어둔 경우, 삭제 후 다시 설치해보세요.
       </div>
 
       <div class="note">
@@ -243,13 +251,13 @@
   <script>
     document.getElementById("y").textContent = new Date().getFullYear();
   </script>
-<script>
-  if ("serviceWorker" in navigator) {
-    window.addEventListener("load", () => {
-      navigator.serviceWorker.register("/sw.js");
-    });
-  }
-</script>
 
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("/sw.js");
+      });
+    }
+  </script>
 </body>
 </html>
