@@ -109,20 +109,25 @@ def get_price_data(symbol: str, start: date, end: date) -> pd.DataFrame:
         return pd.DataFrame()
     return df.sort_index()
 
+# ✅ 지수는 KRX 인덱스 심볼이 종종 깨져서, Yahoo 티커로 읽는 게 안정적입니다.
 @st.cache_data(ttl=60 * 5)  # 5 minutes
-def get_index_snapshot(symbol: str, days: int = 10) -> dict:
-    """지수 현재값/전일비/전일비% 스냅샷"""
-    df = fdr.DataReader(symbol, date.today() - timedelta(days=days), date.today())
-    if df is None or df.empty or "Close" not in df.columns:
+def get_index_snapshot_yahoo(ticker: str, days: int = 20) -> dict:
+    """지수 현재값/전일비% (실패해도 앱이 죽지 않게)"""
+    try:
+        df = fdr.DataReader(ticker, date.today() - timedelta(days=days), date.today())
+        if df is None or df.empty or "Close" not in df.columns:
+            return {"value": None, "pct": None}
+        df = df.sort_index()
+        if len(df) < 2:
+            v = float(df["Close"].iloc[-1])
+            return {"value": v, "pct": None}
+        v_today = float(df["Close"].iloc[-1])
+        v_prev = float(df["Close"].iloc[-2])
+        pct = ((v_today - v_prev) / v_prev) * 100 if v_prev else None
+        return {"value": v_today, "pct": pct}
+    except Exception:
+        # ✅ 어떤 이유로든 실패하면 -로 표시(앱은 계속 동작)
         return {"value": None, "pct": None}
-    df = df.sort_index()
-    if len(df) < 2:
-        v = float(df["Close"].iloc[-1])
-        return {"value": v, "pct": None}
-    v_today = float(df["Close"].iloc[-1])
-    v_prev = float(df["Close"].iloc[-2])
-    pct = ((v_today - v_prev) / v_prev) * 100 if v_prev else None
-    return {"value": v_today, "pct": pct}
 
 # =========================
 # Helpers
@@ -170,20 +175,21 @@ def render_search_buttons(etf_name: str, etf_code: str):
         st.link_button("네이버: 공시", links["naver_disc"], use_container_width=True)
 
 # =========================
-# ✅ Market Index Snapshot 바로 아래(타이틀/캡션 다음)
-# - 모바일에서는 2열+2열로 자동 줄바꿈(CSS로 idxwrap만 적용)
+# ✅ Market Index Snapshot (타이틀/캡션 바로 아래)
+# - Yahoo 티커 사용 + 모바일 2열+2열 wrap
 # =========================
 st.markdown('<div class="idxwrap">', unsafe_allow_html=True)
 
 idx_map = [
-    ("KOSPI", "KS11"),
-    ("KOSDAQ", "KQ11"),
-    ("S&P 500", "US500"),
-    ("NASDAQ", "IXIC"),
+    ("KOSPI", "^KS11"),
+    ("KOSDAQ", "^KQ11"),
+    ("S&P 500", "^GSPC"),
+    ("NASDAQ", "^IXIC"),
 ]
+
 cols = st.columns(4)
-for i, (label, sym) in enumerate(idx_map):
-    snap = get_index_snapshot(sym)
+for i, (label, ticker) in enumerate(idx_map):
+    snap = get_index_snapshot_yahoo(ticker)
     value = fmt_num(snap["value"])
     delta_txt = None
     if snap["pct"] is not None:
@@ -217,7 +223,6 @@ if "pending_symbol" not in st.session_state:
 if "pending_search_keyword" not in st.session_state:
     st.session_state.pending_search_keyword = None
 
-# 검색어 pending 적용 (빈문자열도 적용 위해 None 센티넬)
 if st.session_state.pending_search_keyword is not None:
     st.session_state.search_keyword = st.session_state.pending_search_keyword
     st.session_state.pending_search_keyword = None
