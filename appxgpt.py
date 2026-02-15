@@ -6,6 +6,7 @@ import json
 from urllib.parse import quote_plus
 from streamlit_local_storage import LocalStorage
 import textwrap
+import re
 
 # =========================
 # Page Config
@@ -62,10 +63,37 @@ st.markdown(
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ✅ delta pill (상승=초록, 하락=빨강) */
 .kpi-delta{
-  font-size: 0.8rem;
-  margin-top: 0.15rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  margin-top: 0.25rem;
+  padding: 0.16rem 0.48rem;
+  border-radius: 999px;
   white-space: nowrap;
+  width: fit-content;
+  border: 1px solid transparent;
+}
+
+.kpi-delta.up{
+  background: rgba(0, 166, 90, 0.16);
+  border-color: rgba(0, 166, 90, 0.35);
+  color: rgb(0, 120, 65);
+}
+
+.kpi-delta.down{
+  background: rgba(220, 53, 69, 0.16);
+  border-color: rgba(220, 53, 69, 0.35);
+  color: rgb(176, 29, 43);
+}
+
+.kpi-delta.flat{
+  background: rgba(108, 117, 125, 0.14);
+  border-color: rgba(108, 117, 125, 0.28);
+  color: rgb(90, 98, 104);
 }
 
 .idx-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -214,9 +242,30 @@ def render_search_buttons(etf_name: str, etf_code: str):
     with c4:
         st.link_button("네이버: 공시", links["naver_disc"], use_container_width=True)
 
-# ✅ 핵심: 앞 공백 제거(dedent) + strip
+def _delta_class(delta_text: str | None) -> str:
+    """
+    delta_text 예: '+0.05%', '-1.77%', '0.00%'
+    """
+    if not delta_text:
+        return "flat"
+    s = delta_text.strip()
+    # 숫자만 뽑기
+    m = re.search(r"[-+]?\d+(\.\d+)?", s)
+    if not m:
+        return "flat"
+    v = float(m.group(0))
+    if v > 0:
+        return "up"
+    if v < 0:
+        return "down"
+    return "flat"
+
 def kpi_card(label: str, value: str, delta: str | None = None) -> str:
-    delta_html = f'<div class="kpi-delta">{delta}</div>' if delta is not None else ""
+    delta_html = ""
+    if delta is not None:
+        cls = _delta_class(delta)
+        delta_html = f'<div class="kpi-delta {cls}">{delta}</div>'
+
     html = f"""
 <div class="kpi-card">
   <div class="kpi-label">{label}</div>
