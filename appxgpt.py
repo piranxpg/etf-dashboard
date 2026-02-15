@@ -3,8 +3,10 @@ import FinanceDataReader as fdr
 import pandas as pd
 from datetime import timedelta, date
 import json
-from streamlit_local_storage import LocalStorage
 from urllib.parse import quote_plus
+
+# ✅ Favorites persistence (browser localStorage)
+from streamlit_local_storage import LocalStorage
 
 # =========================
 # Page Config
@@ -12,7 +14,7 @@ from urllib.parse import quote_plus
 st.set_page_config(page_title="국내 ETF 수익률/배당금 분석기", page_icon="📈", layout="wide")
 
 # =========================
-# CSS (모바일: 지수/요약/수익률을 "한 줄"로 강제)
+# CSS (모바일: 지수/요약/수익률 “한 줄(또는 2x2)”로 강제)
 # =========================
 st.markdown(
     """
@@ -34,7 +36,7 @@ st.markdown(
 
 .stButton>button { width: 100%; }
 
-/* ====== 커스텀 카드 ====== */
+/* ====== 커스텀 KPI 카드(Grid) ====== */
 .kpi-grid{
   display: grid;
   gap: 0.5rem;
@@ -86,7 +88,6 @@ st.markdown(
   /* ✅ 모바일: 수익률 4개를 한 줄 */
   .ret-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 
-  /* 모바일에서 카드 패딩 약간 줄임 */
   .kpi-card{ padding: 0.55rem 0.6rem; }
   .kpi-value{ font-size: 0.95rem; }
 }
@@ -161,6 +162,13 @@ def get_price_data(symbol: str, start: date, end: date) -> pd.DataFrame:
 
 @st.cache_data(ttl=60 * 5)
 def get_index_snapshot_yahoo(ticker: str, days: int = 30) -> dict:
+    """
+    ✅ 지수는 KRX 인덱스 심볼이 가끔 깨져서 Yahoo 티커 사용:
+    - KOSPI: ^KS11
+    - KOSDAQ: ^KQ11
+    - S&P500: ^GSPC
+    - NASDAQ: ^IXIC
+    """
     try:
         df = fdr.DataReader(ticker, date.today() - timedelta(days=days), date.today())
         if df is None or df.empty or "Close" not in df.columns:
@@ -224,7 +232,6 @@ def render_search_buttons(etf_name: str, etf_code: str):
 def kpi_card(label: str, value: str, delta: str | None = None) -> str:
     delta_html = ""
     if delta is not None:
-        # delta 색은 기본만(강제 컬러 지정 안 함)
         delta_html = f'<div class="kpi-delta">{delta}</div>'
     return f"""
     <div class="kpi-card">
@@ -234,9 +241,10 @@ def kpi_card(label: str, value: str, delta: str | None = None) -> str:
     </div>
     """
 
-def render_kpi_grid(title: str, grid_class: str, items: list[dict]):
-    # items: [{label, value, delta(optional)}]
-    st.markdown(f"<!-- {title} -->", unsafe_allow_html=True)
+def render_kpi_grid(grid_class: str, items: list[dict]):
+    """
+    ✅ 중요: HTML이 코드로 보이면 여기 unsafe_allow_html=True가 빠진 겁니다.
+    """
     cards = []
     for it in items:
         cards.append(kpi_card(it["label"], it["value"], it.get("delta")))
@@ -263,8 +271,7 @@ for label, ticker in idx_map:
         delta = f"{sign}{snap['pct']:.2f}%"
     idx_items.append({"label": label, "value": value, "delta": delta})
 
-render_kpi_grid("INDEX", "idx-grid", idx_items)
-
+render_kpi_grid("idx-grid", idx_items)
 st.write("")
 
 # =========================
@@ -435,27 +442,27 @@ ret_1y = get_return_by_trading_days(df_price, current_price, 252)
 # =========================
 st.subheader(f"📊 {name} ({code})")
 
-# 현재가는 기존 metric 유지(가독성 좋음)
+# 현재가는 Streamlit metric (보기 좋음)
 st.metric("현재 가격", fmt_won(current_price), delta=f"{diff_pct:.2f}%")
 
-# ✅ 요청: 최신 거래일/시작/개수 -> 모바일에서도 한 줄(3개)로
+# ✅ 최신거래일/시작/개수: 모바일에서도 한 줄(3개)
 sum_items = [
     {"label": "최신 거래일", "value": last_dt.strftime("%Y-%m-%d")},
     {"label": "데이터 시작", "value": df_price.index.min().strftime("%Y-%m-%d")},
     {"label": "데이터 개수", "value": f"{len(df_price):,}"},
 ]
-render_kpi_grid("SUMMARY", "sum-grid", sum_items)
+render_kpi_grid("sum-grid", sum_items)
 
 st.write("#### 📅 기간별 수익률 (거래일 기준)")
 
-# ✅ 요청: 1주/1개월/6개월/1년 -> 모바일에서도 한 줄(4개)로
+# ✅ 1주/1개월/6개월/1년: 모바일에서도 한 줄(4개)
 ret_items = [
     {"label": "1주", "value": fmt_pct(ret_1w)},
     {"label": "1개월", "value": fmt_pct(ret_1m)},
     {"label": "6개월", "value": fmt_pct(ret_6m)},
     {"label": "1년", "value": fmt_pct(ret_1y)},
 ]
-render_kpi_grid("RETURNS", "ret-grid", ret_items)
+render_kpi_grid("ret-grid", ret_items)
 
 st.write("#### 📈 최근 1년 주가 흐름(종가)")
 df_1y = df_price.loc[df_price.index >= (last_dt - timedelta(days=365))]
@@ -467,7 +474,7 @@ st.line_chart(df_1y["Close"])
 st.divider()
 st.subheader("💸 배당금(분배금) 시뮬레이션")
 
-# 시뮬레이션 바로 아래: 검색 버튼
+# 시뮬레이션 제목 바로 아래: 검색 버튼
 render_search_buttons(name, code)
 
 if "investment" not in st.session_state:
