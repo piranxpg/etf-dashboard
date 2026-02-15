@@ -191,6 +191,8 @@
       .footer { justify-content: center; text-align: center; }
     }
   </style>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#0b0f17">
 </head>
 
 <body>
@@ -241,5 +243,13 @@
   <script>
     document.getElementById("y").textContent = new Date().getFullYear();
   </script>
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js");
+    });
+  }
+</script>
+
 </body>
 </html>
