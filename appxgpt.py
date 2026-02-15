@@ -4,9 +4,8 @@ import pandas as pd
 from datetime import timedelta, date
 import json
 from urllib.parse import quote_plus
-
-# ✅ Favorites persistence (browser localStorage)
 from streamlit_local_storage import LocalStorage
+import textwrap
 
 # =========================
 # Page Config
@@ -14,7 +13,7 @@ from streamlit_local_storage import LocalStorage
 st.set_page_config(page_title="국내 ETF 수익률/배당금 분석기", page_icon="📈", layout="wide")
 
 # =========================
-# CSS (모바일: 지수/요약/수익률 “한 줄(또는 2x2)”로 강제)
+# CSS
 # =========================
 st.markdown(
     """
@@ -29,14 +28,13 @@ st.markdown(
   overflow-wrap: normal;
 }
 
-/* 기본 metric 줄바꿈 줄이기 */
 [data-testid="stMetricLabel"] { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 [data-testid="stMetricValue"] { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 [data-testid="stMetricDelta"] { white-space: nowrap; }
 
 .stButton>button { width: 100%; }
 
-/* ====== 커스텀 KPI 카드(Grid) ====== */
+/* KPI Grid */
 .kpi-grid{
   display: grid;
   gap: 0.5rem;
@@ -70,7 +68,6 @@ st.markdown(
   white-space: nowrap;
 }
 
-/* PC 기본: 지수 4열, 요약 3열, 수익률 4열 */
 .idx-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .sum-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .ret-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -79,13 +76,8 @@ st.markdown(
   .block-container { padding-top: 5.0rem; padding-left: 0.85rem; padding-right: 0.85rem; }
   .etf-title { font-size: 1.75rem; }
 
-  /* ✅ 모바일: 지수는 2열(2x2) */
   .idx-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-
-  /* ✅ 모바일: 요약(최신거래일/시작/개수) 3개를 한 줄 */
   .sum-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-
-  /* ✅ 모바일: 수익률 4개를 한 줄 */
   .ret-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 
   .kpi-card{ padding: 0.55rem 0.6rem; }
@@ -139,7 +131,7 @@ def save_favorites_symbols(symbols: list[str]) -> None:
         pass
 
 # =========================
-# Data Loaders (Cached)
+# Data Loaders
 # =========================
 @st.cache_data(ttl=60 * 60 * 6)
 def get_etf_list() -> pd.DataFrame:
@@ -162,13 +154,6 @@ def get_price_data(symbol: str, start: date, end: date) -> pd.DataFrame:
 
 @st.cache_data(ttl=60 * 5)
 def get_index_snapshot_yahoo(ticker: str, days: int = 30) -> dict:
-    """
-    ✅ 지수는 KRX 인덱스 심볼이 가끔 깨져서 Yahoo 티커 사용:
-    - KOSPI: ^KS11
-    - KOSDAQ: ^KQ11
-    - S&P500: ^GSPC
-    - NASDAQ: ^IXIC
-    """
     try:
         df = fdr.DataReader(ticker, date.today() - timedelta(days=days), date.today())
         if df is None or df.empty or "Close" not in df.columns:
@@ -229,31 +214,25 @@ def render_search_buttons(etf_name: str, etf_code: str):
     with c4:
         st.link_button("네이버: 공시", links["naver_disc"], use_container_width=True)
 
+# ✅ 핵심: 앞 공백 제거(dedent) + strip
 def kpi_card(label: str, value: str, delta: str | None = None) -> str:
-    delta_html = ""
-    if delta is not None:
-        delta_html = f'<div class="kpi-delta">{delta}</div>'
-    return f"""
-    <div class="kpi-card">
-      <div class="kpi-label">{label}</div>
-      <div class="kpi-value">{value}</div>
-      {delta_html}
-    </div>
-    """
+    delta_html = f'<div class="kpi-delta">{delta}</div>' if delta is not None else ""
+    html = f"""
+<div class="kpi-card">
+  <div class="kpi-label">{label}</div>
+  <div class="kpi-value">{value}</div>
+  {delta_html}
+</div>
+"""
+    return textwrap.dedent(html).strip()
 
 def render_kpi_grid(grid_class: str, items: list[dict]):
-    """
-    ✅ 중요: HTML이 코드로 보이면 여기 unsafe_allow_html=True가 빠진 겁니다.
-    """
-    cards = []
-    for it in items:
-        cards.append(kpi_card(it["label"], it["value"], it.get("delta")))
+    cards = [kpi_card(it["label"], it["value"], it.get("delta")) for it in items]
     html = f'<div class="kpi-grid {grid_class}">' + "".join(cards) + "</div>"
     st.markdown(html, unsafe_allow_html=True)
 
 # =========================
-# ✅ Index Snapshot (타이틀 바로 아래)
-# - 모바일: 2열+2열 / PC: 4열
+# Index Snapshot (Title 아래)
 # =========================
 idx_map = [
     ("KOSPI", "^KS11"),
@@ -345,7 +324,7 @@ code = selected_symbol
 name = symbol_to_name.get(code, "")
 
 # =========================
-# ETF 변경 시: 분배율/분배금 값만 0 리셋 (모드는 유지)
+# ETF 변경 시: 분배율/분배금만 0 리셋 (모드 유지)
 # =========================
 if "last_symbol" not in st.session_state:
     st.session_state.last_symbol = code
@@ -441,11 +420,8 @@ ret_1y = get_return_by_trading_days(df_price, current_price, 252)
 # Main UI
 # =========================
 st.subheader(f"📊 {name} ({code})")
-
-# 현재가는 Streamlit metric (보기 좋음)
 st.metric("현재 가격", fmt_won(current_price), delta=f"{diff_pct:.2f}%")
 
-# ✅ 최신거래일/시작/개수: 모바일에서도 한 줄(3개)
 sum_items = [
     {"label": "최신 거래일", "value": last_dt.strftime("%Y-%m-%d")},
     {"label": "데이터 시작", "value": df_price.index.min().strftime("%Y-%m-%d")},
@@ -454,8 +430,6 @@ sum_items = [
 render_kpi_grid("sum-grid", sum_items)
 
 st.write("#### 📅 기간별 수익률 (거래일 기준)")
-
-# ✅ 1주/1개월/6개월/1년: 모바일에서도 한 줄(4개)
 ret_items = [
     {"label": "1주", "value": fmt_pct(ret_1w)},
     {"label": "1개월", "value": fmt_pct(ret_1m)},
@@ -469,12 +443,10 @@ df_1y = df_price.loc[df_price.index >= (last_dt - timedelta(days=365))]
 st.line_chart(df_1y["Close"])
 
 # =========================
-# Dividend Simulation + Investment Buttons
+# Dividend Simulation
 # =========================
 st.divider()
 st.subheader("💸 배당금(분배금) 시뮬레이션")
-
-# 시뮬레이션 제목 바로 아래: 검색 버튼
 render_search_buttons(name, code)
 
 if "investment" not in st.session_state:
