@@ -13,6 +13,7 @@ st.set_page_config(page_title="국내 ETF 수익률/배당금 분석기", page_i
 
 # =========================
 # CSS
+# - 지수(KOSPI/KOSDAQ/S&P500/NASDAQ) 영역만: 모바일에서 2열+2열로 wrap
 # =========================
 st.markdown(
     """
@@ -30,15 +31,23 @@ st.markdown(
 [data-testid="stMetricValue"] { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 [data-testid="stMetricDelta"] { white-space: nowrap; }
 .stButton>button { width: 100%; }
+
 @media (max-width: 640px) {
   .block-container { padding-top: 5.0rem; padding-left: 0.85rem; padding-right: 0.85rem; }
   .etf-title { font-size: 1.75rem; }
+
+  /* ✅ 지수 영역(.idxwrap) 내부의 columns만 2열로 줄바꿈 */
+  .idxwrap [data-testid="stHorizontalBlock"] { flex-wrap: wrap !important; gap: 0.5rem !important; }
+  .idxwrap [data-testid="column"] { flex: 1 1 calc(50% - 0.25rem) !important; min-width: calc(50% - 0.25rem) !important; }
 }
 </style>
 """,
     unsafe_allow_html=True,
 )
 
+# =========================
+# Title
+# =========================
 st.markdown('<div class="etf-title">📈 국내 ETF 수익률/배당금 분석기</div>', unsafe_allow_html=True)
 st.caption("※ 모든 데이터는 실시간이 아니며, 투자 참고용입니다. (데이터 오류/지연 가능)")
 
@@ -100,6 +109,21 @@ def get_price_data(symbol: str, start: date, end: date) -> pd.DataFrame:
         return pd.DataFrame()
     return df.sort_index()
 
+@st.cache_data(ttl=60 * 5)  # 5 minutes
+def get_index_snapshot(symbol: str, days: int = 10) -> dict:
+    """지수 현재값/전일비/전일비% 스냅샷"""
+    df = fdr.DataReader(symbol, date.today() - timedelta(days=days), date.today())
+    if df is None or df.empty or "Close" not in df.columns:
+        return {"value": None, "pct": None}
+    df = df.sort_index()
+    if len(df) < 2:
+        v = float(df["Close"].iloc[-1])
+        return {"value": v, "pct": None}
+    v_today = float(df["Close"].iloc[-1])
+    v_prev = float(df["Close"].iloc[-2])
+    pct = ((v_today - v_prev) / v_prev) * 100 if v_prev else None
+    return {"value": v_today, "pct": pct}
+
 # =========================
 # Helpers
 # =========================
@@ -108,6 +132,9 @@ def fmt_pct(x):
 
 def fmt_won(x: float) -> str:
     return f"{x:,.0f}원"
+
+def fmt_num(x: float) -> str:
+    return "-" if x is None else f"{x:,.2f}"
 
 def get_return_by_trading_days(df_price: pd.DataFrame, current_price: float, n: int):
     if len(df_price) <= n:
@@ -121,22 +148,17 @@ def make_search_links(etf_name: str, etf_code: str) -> dict:
     q_main = quote_plus(f"{etf_name} 분배금")
     q_pay  = quote_plus(f"{etf_name} 분배금 지급일")
     q_disc = quote_plus(f"{etf_name} 분배금 공시")
-    q_code = quote_plus(f"{etf_code} {etf_name} 분배금")
-
     return {
         "google_div": f"https://www.google.com/search?q={q_main}",
         "google_pay": f"https://www.google.com/search?q={q_pay}",
         "naver_div":  f"https://search.naver.com/search.naver?query={q_main}",
         "naver_disc": f"https://search.naver.com/search.naver?query={q_disc}",
-        "google_code": f"https://www.google.com/search?q={q_code}",
     }
 
 def render_search_buttons(etf_name: str, etf_code: str):
     links = make_search_links(etf_name, etf_code)
-
     st.write("#### 🔎 분배금/배당 정보 빠른 검색")
     st.caption("※ 자동 수집 대신, 공식/포털 검색으로 빠르게 확인할 수 있게 연결합니다.")
-
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         st.link_button("구글: 분배금", links["google_div"], use_container_width=True)
@@ -146,6 +168,31 @@ def render_search_buttons(etf_name: str, etf_code: str):
         st.link_button("네이버: 분배금", links["naver_div"], use_container_width=True)
     with c4:
         st.link_button("네이버: 공시", links["naver_disc"], use_container_width=True)
+
+# =========================
+# ✅ Market Index Snapshot 바로 아래(타이틀/캡션 다음)
+# - 모바일에서는 2열+2열로 자동 줄바꿈(CSS로 idxwrap만 적용)
+# =========================
+st.markdown('<div class="idxwrap">', unsafe_allow_html=True)
+
+idx_map = [
+    ("KOSPI", "KS11"),
+    ("KOSDAQ", "KQ11"),
+    ("S&P 500", "US500"),
+    ("NASDAQ", "IXIC"),
+]
+cols = st.columns(4)
+for i, (label, sym) in enumerate(idx_map):
+    snap = get_index_snapshot(sym)
+    value = fmt_num(snap["value"])
+    delta_txt = None
+    if snap["pct"] is not None:
+        sign = "+" if snap["pct"] >= 0 else ""
+        delta_txt = f"{sign}{snap['pct']:.2f}%"
+    with cols[i]:
+        st.metric(label, value, delta=delta_txt)
+
+st.markdown("</div>", unsafe_allow_html=True)
 
 # =========================
 # Sidebar - Search & Select
@@ -344,7 +391,7 @@ st.line_chart(df_1y["Close"])
 st.divider()
 st.subheader("💸 배당금(분배금) 시뮬레이션")
 
-# ✅ 요청: 시뮬레이션 제목 바로 아래에 검색 버튼 배치
+# ✅ 시뮬레이션 제목 바로 아래: 분배금 검색 버튼
 render_search_buttons(name, code)
 
 if "investment" not in st.session_state:
@@ -396,16 +443,12 @@ if mode == ANNUAL_MODE:
         step=0.1,
         key="annual_yield",
     )
-
     if annual_yield == 0.0:
         st.info("연 분배율(%)을 입력하면 예상 월/연 분배금이 계산됩니다.")
-
     estimated_monthly = investment * (annual_yield / 100.0) / 12.0
-
     d1, d2 = st.columns(2)
     d1.metric("예상 월 배당금(분배금)", fmt_won(estimated_monthly))
     d2.metric("예상 연 배당금(분배금)", fmt_won(estimated_monthly * 12))
-
 else:
     monthly_div_per_share = st.number_input(
         "월 주당 분배금(원)",
@@ -413,13 +456,10 @@ else:
         step=10.0,
         key="monthly_div_per_share",
     )
-
     if monthly_div_per_share == 0.0:
         st.info("월 주당 분배금(원)을 입력하면 예상 월/연 분배금이 계산됩니다.")
-
     shares = (investment / current_price) if current_price else 0.0
     estimated_monthly = shares * monthly_div_per_share
-
     d1, d2, d3 = st.columns(3)
     d1.metric("예상 보유 주식수", f"{shares:,.2f}주")
     d2.metric("예상 월 배당금", fmt_won(estimated_monthly))
