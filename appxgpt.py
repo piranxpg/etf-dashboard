@@ -8,6 +8,11 @@ from streamlit_local_storage import LocalStorage
 import textwrap
 import re
 
+# ✅ 정적 차트(모바일)용
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+
+
 # =========================
 # Page Config
 # =========================
@@ -64,7 +69,7 @@ st.markdown(
   text-overflow: ellipsis;
 }
 
-/* ✅ delta pill (상승=초록, 하락=빨강) */
+/* delta pill */
 .kpi-delta{
   display: inline-flex;
   align-items: center;
@@ -77,19 +82,16 @@ st.markdown(
   width: fit-content;
   border: 1px solid transparent;
 }
-
 .kpi-delta.up{
   background: rgba(0, 166, 90, 0.16);
   border-color: rgba(0, 166, 90, 0.35);
   color: rgb(0, 120, 65);
 }
-
 .kpi-delta.down{
   background: rgba(220, 53, 69, 0.16);
   border-color: rgba(220, 53, 69, 0.35);
   color: rgb(176, 29, 43);
 }
-
 .kpi-delta.flat{
   background: rgba(108, 117, 125, 0.14);
   border-color: rgba(108, 117, 125, 0.28);
@@ -122,11 +124,13 @@ st.markdown(
 st.markdown('<div class="etf-title">📈 국내 ETF 수익률/배당금 분석기</div>', unsafe_allow_html=True)
 st.caption("※ 모든 데이터는 실시간이 아니며, 투자 참고용입니다. (데이터 오류/지연 가능)")
 
+
 # =========================
 # LocalStorage (favorites)
 # =========================
 localS = LocalStorage()
 LS_FAV_KEY = "etf_dashboard_favorites_symbol_v1"
+
 
 def _safe_parse_symbols(raw) -> list[str]:
     if raw is None:
@@ -145,6 +149,7 @@ def _safe_parse_symbols(raw) -> list[str]:
             return [raw]
     return []
 
+
 def load_favorites_symbols() -> list[str]:
     try:
         raw = localS.getItem(LS_FAV_KEY)
@@ -152,11 +157,13 @@ def load_favorites_symbols() -> list[str]:
         raw = None
     return _safe_parse_symbols(raw)
 
+
 def save_favorites_symbols(symbols: list[str]) -> None:
     try:
         localS.setItem(LS_FAV_KEY, json.dumps(symbols, ensure_ascii=False))
     except Exception:
         pass
+
 
 # =========================
 # Data Loaders
@@ -171,6 +178,7 @@ def get_etf_list() -> pd.DataFrame:
     df["Name"] = df["Name"].astype(str)
     return df
 
+
 @st.cache_data(ttl=60 * 10)
 def get_price_data(symbol: str, start: date, end: date) -> pd.DataFrame:
     df = fdr.DataReader(symbol, start, end)
@@ -180,8 +188,16 @@ def get_price_data(symbol: str, start: date, end: date) -> pd.DataFrame:
         return pd.DataFrame()
     return df.sort_index()
 
+
 @st.cache_data(ttl=60 * 5)
 def get_index_snapshot_yahoo(ticker: str, days: int = 30) -> dict:
+    """
+    Yahoo 티커 사용:
+    - KOSPI: ^KS11
+    - KOSDAQ: ^KQ11
+    - S&P500: ^GSPC
+    - NASDAQ: ^IXIC
+    """
     try:
         df = fdr.DataReader(ticker, date.today() - timedelta(days=days), date.today())
         if df is None or df.empty or "Close" not in df.columns:
@@ -197,17 +213,21 @@ def get_index_snapshot_yahoo(ticker: str, days: int = 30) -> dict:
     except Exception:
         return {"value": None, "pct": None}
 
+
 # =========================
 # Helpers
 # =========================
 def fmt_pct(x):
     return "-" if x is None else f"{x:.2f}%"
 
+
 def fmt_won(x: float) -> str:
     return f"{x:,.0f}원"
 
+
 def fmt_num(x: float) -> str:
     return "-" if x is None else f"{x:,.2f}"
+
 
 def get_return_by_trading_days(df_price: pd.DataFrame, current_price: float, n: int):
     if len(df_price) <= n:
@@ -217,16 +237,18 @@ def get_return_by_trading_days(df_price: pd.DataFrame, current_price: float, n: 
         return None
     return (current_price / past_price - 1) * 100
 
+
 def make_search_links(etf_name: str, etf_code: str) -> dict:
     q_main = quote_plus(f"{etf_name} 분배금")
-    q_pay  = quote_plus(f"{etf_name} 분배금 지급일")
+    q_pay = quote_plus(f"{etf_name} 분배금 지급일")
     q_disc = quote_plus(f"{etf_name} 분배금 공시")
     return {
         "google_div": f"https://www.google.com/search?q={q_main}",
         "google_pay": f"https://www.google.com/search?q={q_pay}",
-        "naver_div":  f"https://search.naver.com/search.naver?query={q_main}",
+        "naver_div": f"https://search.naver.com/search.naver?query={q_main}",
         "naver_disc": f"https://search.naver.com/search.naver?query={q_disc}",
     }
+
 
 def render_search_buttons(etf_name: str, etf_code: str):
     links = make_search_links(etf_name, etf_code)
@@ -242,14 +264,11 @@ def render_search_buttons(etf_name: str, etf_code: str):
     with c4:
         st.link_button("네이버: 공시", links["naver_disc"], use_container_width=True)
 
+
 def _delta_class(delta_text: str | None) -> str:
-    """
-    delta_text 예: '+0.05%', '-1.77%', '0.00%'
-    """
     if not delta_text:
         return "flat"
     s = delta_text.strip()
-    # 숫자만 뽑기
     m = re.search(r"[-+]?\d+(\.\d+)?", s)
     if not m:
         return "flat"
@@ -259,6 +278,7 @@ def _delta_class(delta_text: str | None) -> str:
     if v < 0:
         return "down"
     return "flat"
+
 
 def kpi_card(label: str, value: str, delta: str | None = None) -> str:
     delta_html = ""
@@ -275,10 +295,12 @@ def kpi_card(label: str, value: str, delta: str | None = None) -> str:
 """
     return textwrap.dedent(html).strip()
 
+
 def render_kpi_grid(grid_class: str, items: list[dict]):
     cards = [kpi_card(it["label"], it["value"], it.get("delta")) for it in items]
     html = f'<div class="kpi-grid {grid_class}">' + "".join(cards) + "</div>"
     st.markdown(html, unsafe_allow_html=True)
+
 
 # =========================
 # Index Snapshot (Title 아래)
@@ -302,6 +324,7 @@ for label, ticker in idx_map:
 render_kpi_grid("idx-grid", idx_items)
 st.write("")
 
+
 # =========================
 # Sidebar - Search & Select
 # =========================
@@ -312,8 +335,10 @@ with st.spinner("국내 모든 ETF 정보를 가져오는 중입니다..."):
 
 symbol_to_name = dict(zip(etf_list["Symbol"], etf_list["Name"]))
 
+
 def label_symbol(sym: str) -> str:
     return f"{sym} | {symbol_to_name.get(sym, '')}"
+
 
 if "favorite_symbols" not in st.session_state:
     st.session_state.favorite_symbols = load_favorites_symbols()
@@ -372,6 +397,7 @@ selected_symbol = st.sidebar.selectbox(
 code = selected_symbol
 name = symbol_to_name.get(code, "")
 
+
 # =========================
 # ETF 변경 시: 분배율/분배금만 0 리셋 (모드 유지)
 # =========================
@@ -384,7 +410,7 @@ if "monthly_div_per_share" not in st.session_state:
     st.session_state.monthly_div_per_share = 0.0
 
 MONTHLY_MODE = "월 주당 분배금(원)으로 계산 (더 직관적)"
-ANNUAL_MODE  = "연 분배율(%)로 계산 (간편)"
+ANNUAL_MODE = "연 분배율(%)로 계산 (간편)"
 
 if "calc_mode" not in st.session_state:
     st.session_state.calc_mode = MONTHLY_MODE
@@ -393,6 +419,7 @@ if st.session_state.last_symbol != code:
     st.session_state.last_symbol = code
     st.session_state.annual_yield = 0.0
     st.session_state.monthly_div_per_share = 0.0
+
 
 # =========================
 # Sidebar - Favorites
@@ -439,6 +466,7 @@ if st.session_state.favorite_symbols:
 else:
     st.sidebar.caption("즐겨찾기 ETF를 등록하면 여기서 빠르게 불러올 수 있습니다.")
 
+
 # =========================
 # Load Price Data
 # =========================
@@ -457,6 +485,7 @@ current_price = float(df_price.loc[last_dt, "Close"])
 yesterday_price = float(df_price["Close"].iloc[-2]) if len(df_price) >= 2 else current_price
 diff_pct = ((current_price / yesterday_price) - 1) * 100 if yesterday_price else 0.0
 
+
 # =========================
 # Returns
 # =========================
@@ -464,6 +493,7 @@ ret_1w = get_return_by_trading_days(df_price, current_price, 5)
 ret_1m = get_return_by_trading_days(df_price, current_price, 21)
 ret_6m = get_return_by_trading_days(df_price, current_price, 126)
 ret_1y = get_return_by_trading_days(df_price, current_price, 252)
+
 
 # =========================
 # Main UI
@@ -487,9 +517,37 @@ ret_items = [
 ]
 render_kpi_grid("ret-grid", ret_items)
 
+# =========================
+# Chart (모바일 고정 / PC 인터랙티브) - ✅ 토글 방식
+# =========================
 st.write("#### 📈 최근 1년 주가 흐름(종가)")
 df_1y = df_price.loc[df_price.index >= (last_dt - timedelta(days=365))]
-st.line_chart(df_1y["Close"])
+
+if "mobile_static_chart" not in st.session_state:
+    st.session_state.mobile_static_chart = True  # ✅ 기본값: 모바일 친화(정적)
+
+with st.expander("차트 설정"):
+    st.session_state.mobile_static_chart = st.toggle(
+        "모바일(정적 차트) 모드 — 드래그/줌/툴팁 없음",
+        value=st.session_state.mobile_static_chart,
+    )
+
+if st.session_state.mobile_static_chart:
+    fig, ax = plt.subplots()
+    ax.plot(df_1y.index, df_1y["Close"].values)
+
+    ax.xaxis.set_major_locator(mdates.AutoDateLocator(minticks=3, maxticks=6))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%y-%m"))
+    ax.grid(True, alpha=0.25)
+
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+    fig.autofmt_xdate()
+
+    st.pyplot(fig, clear_figure=True, use_container_width=True)
+else:
+    st.line_chart(df_1y["Close"])
+
 
 # =========================
 # Dividend Simulation
