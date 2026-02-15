@@ -12,8 +12,7 @@ from urllib.parse import quote_plus
 st.set_page_config(page_title="국내 ETF 수익률/배당금 분석기", page_icon="📈", layout="wide")
 
 # =========================
-# CSS
-# - 지수(KOSPI/KOSDAQ/S&P500/NASDAQ) 영역만: 모바일에서 2열+2열로 wrap
+# CSS (모바일: 지수/요약/수익률을 "한 줄"로 강제)
 # =========================
 st.markdown(
     """
@@ -27,18 +26,69 @@ st.markdown(
   word-break: keep-all;
   overflow-wrap: normal;
 }
+
+/* 기본 metric 줄바꿈 줄이기 */
 [data-testid="stMetricLabel"] { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 [data-testid="stMetricValue"] { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 [data-testid="stMetricDelta"] { white-space: nowrap; }
+
 .stButton>button { width: 100%; }
+
+/* ====== 커스텀 카드 ====== */
+.kpi-grid{
+  display: grid;
+  gap: 0.5rem;
+}
+.kpi-card{
+  border: 1px solid rgba(49, 51, 63, 0.12);
+  border-radius: 0.75rem;
+  padding: 0.6rem 0.7rem;
+  background: rgba(255,255,255,0.02);
+}
+.kpi-label{
+  font-size: 0.78rem;
+  opacity: 0.75;
+  line-height: 1.1;
+  margin-bottom: 0.15rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kpi-value{
+  font-size: 1.05rem;
+  font-weight: 750;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kpi-delta{
+  font-size: 0.8rem;
+  margin-top: 0.15rem;
+  white-space: nowrap;
+}
+
+/* PC 기본: 지수 4열, 요약 3열, 수익률 4열 */
+.idx-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.sum-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ret-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 
 @media (max-width: 640px) {
   .block-container { padding-top: 5.0rem; padding-left: 0.85rem; padding-right: 0.85rem; }
   .etf-title { font-size: 1.75rem; }
 
-  /* ✅ 지수 영역(.idxwrap) 내부의 columns만 2열로 줄바꿈 */
-  .idxwrap [data-testid="stHorizontalBlock"] { flex-wrap: wrap !important; gap: 0.5rem !important; }
-  .idxwrap [data-testid="column"] { flex: 1 1 calc(50% - 0.25rem) !important; min-width: calc(50% - 0.25rem) !important; }
+  /* ✅ 모바일: 지수는 2열(2x2) */
+  .idx-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  /* ✅ 모바일: 요약(최신거래일/시작/개수) 3개를 한 줄 */
+  .sum-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+  /* ✅ 모바일: 수익률 4개를 한 줄 */
+  .ret-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+  /* 모바일에서 카드 패딩 약간 줄임 */
+  .kpi-card{ padding: 0.55rem 0.6rem; }
+  .kpi-value{ font-size: 0.95rem; }
 }
 </style>
 """,
@@ -109,10 +159,8 @@ def get_price_data(symbol: str, start: date, end: date) -> pd.DataFrame:
         return pd.DataFrame()
     return df.sort_index()
 
-# ✅ 지수는 KRX 인덱스 심볼이 종종 깨져서, Yahoo 티커로 읽는 게 안정적입니다.
-@st.cache_data(ttl=60 * 5)  # 5 minutes
-def get_index_snapshot_yahoo(ticker: str, days: int = 20) -> dict:
-    """지수 현재값/전일비% (실패해도 앱이 죽지 않게)"""
+@st.cache_data(ttl=60 * 5)
+def get_index_snapshot_yahoo(ticker: str, days: int = 30) -> dict:
     try:
         df = fdr.DataReader(ticker, date.today() - timedelta(days=days), date.today())
         if df is None or df.empty or "Close" not in df.columns:
@@ -126,7 +174,6 @@ def get_index_snapshot_yahoo(ticker: str, days: int = 20) -> dict:
         pct = ((v_today - v_prev) / v_prev) * 100 if v_prev else None
         return {"value": v_today, "pct": pct}
     except Exception:
-        # ✅ 어떤 이유로든 실패하면 -로 표시(앱은 계속 동작)
         return {"value": None, "pct": None}
 
 # =========================
@@ -174,31 +221,51 @@ def render_search_buttons(etf_name: str, etf_code: str):
     with c4:
         st.link_button("네이버: 공시", links["naver_disc"], use_container_width=True)
 
-# =========================
-# ✅ Market Index Snapshot (타이틀/캡션 바로 아래)
-# - Yahoo 티커 사용 + 모바일 2열+2열 wrap
-# =========================
-st.markdown('<div class="idxwrap">', unsafe_allow_html=True)
+def kpi_card(label: str, value: str, delta: str | None = None) -> str:
+    delta_html = ""
+    if delta is not None:
+        # delta 색은 기본만(강제 컬러 지정 안 함)
+        delta_html = f'<div class="kpi-delta">{delta}</div>'
+    return f"""
+    <div class="kpi-card">
+      <div class="kpi-label">{label}</div>
+      <div class="kpi-value">{value}</div>
+      {delta_html}
+    </div>
+    """
 
+def render_kpi_grid(title: str, grid_class: str, items: list[dict]):
+    # items: [{label, value, delta(optional)}]
+    st.markdown(f"<!-- {title} -->", unsafe_allow_html=True)
+    cards = []
+    for it in items:
+        cards.append(kpi_card(it["label"], it["value"], it.get("delta")))
+    html = f'<div class="kpi-grid {grid_class}">' + "".join(cards) + "</div>"
+    st.markdown(html, unsafe_allow_html=True)
+
+# =========================
+# ✅ Index Snapshot (타이틀 바로 아래)
+# - 모바일: 2열+2열 / PC: 4열
+# =========================
 idx_map = [
     ("KOSPI", "^KS11"),
     ("KOSDAQ", "^KQ11"),
     ("S&P 500", "^GSPC"),
     ("NASDAQ", "^IXIC"),
 ]
-
-cols = st.columns(4)
-for i, (label, ticker) in enumerate(idx_map):
+idx_items = []
+for label, ticker in idx_map:
     snap = get_index_snapshot_yahoo(ticker)
     value = fmt_num(snap["value"])
-    delta_txt = None
+    delta = None
     if snap["pct"] is not None:
         sign = "+" if snap["pct"] >= 0 else ""
-        delta_txt = f"{sign}{snap['pct']:.2f}%"
-    with cols[i]:
-        st.metric(label, value, delta=delta_txt)
+        delta = f"{sign}{snap['pct']:.2f}%"
+    idx_items.append({"label": label, "value": value, "delta": delta})
 
-st.markdown("</div>", unsafe_allow_html=True)
+render_kpi_grid("INDEX", "idx-grid", idx_items)
+
+st.write("")
 
 # =========================
 # Sidebar - Search & Select
@@ -213,11 +280,9 @@ symbol_to_name = dict(zip(etf_list["Symbol"], etf_list["Name"]))
 def label_symbol(sym: str) -> str:
     return f"{sym} | {symbol_to_name.get(sym, '')}"
 
-# 즐겨찾기 심볼 로드(최초 1회)
 if "favorite_symbols" not in st.session_state:
     st.session_state.favorite_symbols = load_favorites_symbols()
 
-# pending
 if "pending_symbol" not in st.session_state:
     st.session_state.pending_symbol = None
 if "pending_search_keyword" not in st.session_state:
@@ -370,21 +435,27 @@ ret_1y = get_return_by_trading_days(df_price, current_price, 252)
 # =========================
 st.subheader(f"📊 {name} ({code})")
 
-m1, m2 = st.columns([1.2, 1.8])
-with m1:
-    st.metric("현재 가격", fmt_won(current_price), delta=f"{diff_pct:.2f}%")
-with m2:
-    a, b, c = st.columns(3)
-    a.metric("최신 거래일", last_dt.strftime("%Y-%m-%d"))
-    b.metric("데이터 시작", df_price.index.min().strftime("%Y-%m-%d"))
-    c.metric("데이터 개수", f"{len(df_price):,}")
+# 현재가는 기존 metric 유지(가독성 좋음)
+st.metric("현재 가격", fmt_won(current_price), delta=f"{diff_pct:.2f}%")
+
+# ✅ 요청: 최신 거래일/시작/개수 -> 모바일에서도 한 줄(3개)로
+sum_items = [
+    {"label": "최신 거래일", "value": last_dt.strftime("%Y-%m-%d")},
+    {"label": "데이터 시작", "value": df_price.index.min().strftime("%Y-%m-%d")},
+    {"label": "데이터 개수", "value": f"{len(df_price):,}"},
+]
+render_kpi_grid("SUMMARY", "sum-grid", sum_items)
 
 st.write("#### 📅 기간별 수익률 (거래일 기준)")
-rr1, rr2, rr3, rr4 = st.columns(4)
-rr1.metric("1주", fmt_pct(ret_1w))
-rr2.metric("1개월", fmt_pct(ret_1m))
-rr3.metric("6개월", fmt_pct(ret_6m))
-rr4.metric("1년", fmt_pct(ret_1y))
+
+# ✅ 요청: 1주/1개월/6개월/1년 -> 모바일에서도 한 줄(4개)로
+ret_items = [
+    {"label": "1주", "value": fmt_pct(ret_1w)},
+    {"label": "1개월", "value": fmt_pct(ret_1m)},
+    {"label": "6개월", "value": fmt_pct(ret_6m)},
+    {"label": "1년", "value": fmt_pct(ret_1y)},
+]
+render_kpi_grid("RETURNS", "ret-grid", ret_items)
 
 st.write("#### 📈 최근 1년 주가 흐름(종가)")
 df_1y = df_price.loc[df_price.index >= (last_dt - timedelta(days=365))]
@@ -396,7 +467,7 @@ st.line_chart(df_1y["Close"])
 st.divider()
 st.subheader("💸 배당금(분배금) 시뮬레이션")
 
-# ✅ 시뮬레이션 제목 바로 아래: 분배금 검색 버튼
+# 시뮬레이션 바로 아래: 검색 버튼
 render_search_buttons(name, code)
 
 if "investment" not in st.session_state:
